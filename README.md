@@ -12,7 +12,7 @@ pinned: false
 ---
 
 <div style="text-align: center;">
-    <img src="https://raw.githubusercontent.com/ZySec-AI/ZySec/main/zysec-logo.png" alt="ZySec AI Logo" width="240" height="240"/>
+    <img src="https://raw.githubusercontent.com/ZySec-AI/.github/main/zysec-logo.png" alt="ZySec AI Logo" width="240" height="240"/>
 </div>
 
 
