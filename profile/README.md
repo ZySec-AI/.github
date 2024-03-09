@@ -28,7 +28,8 @@ Our mission is to empower security professionals by seamlessly integrating the Z
 
 Our vision is to leverage the potential of AI models, especially the ZySec series, effectively embedded into security operations. We aim to create the best tools for security professionals, continually evolving and advancing with the field.
 
-🔗 [Explore Our Vision and Roadmap](https://zysec-ai-vision.com)
+### [🔗 Follow us ](https://www.linkedin.com/company/zysec-ai/)
+### [🔗 Explore Our Vision and Roadmap](https://github.com/ZySec-AI/.github/blob/main/roadmap.md)
 
 ---
 
