@@ -11,11 +11,6 @@ pinned: false
 
 ---
 
-<div style="text-align: center;">
-    <img src="https://raw.githubusercontent.com/ZySec-AI/.github/main/zysec-logo.png" alt="ZySec AI Logo" width="240" height="240"/>
-</div>
-
-
 ## Welcome to ZySec AI - a vanguard project at the intersection of artificial intelligence and cybersecurity.
 
 Our mission is to empower security professionals by seamlessly integrating the ZySec series of AI models into cybersecurity operations, ushering in a new era of advanced, AI-driven security solutions.
