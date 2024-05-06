@@ -11,7 +11,7 @@ pinned: false
 
 ---
 
-## Welcome to ZySec AI - a vanguard project at the intersection of artificial intelligence and cybersecurity.
+## Welcome to ZySec AI - intersection of artificial intelligence and cybersecurity.
 
 Our mission is to empower security professionals by seamlessly integrating the ZySec series of AI models into cybersecurity operations, ushering in a new era of advanced, AI-driven security solutions.
 
