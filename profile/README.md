@@ -15,8 +15,6 @@ pinned: false
 
 Our mission is to empower security professionals by seamlessly integrating the ZySec series of AI models into cybersecurity operations, ushering in a new era of advanced, AI-driven security solutions.
 
-🌐 [View Our Demo on Huggingface](https://huggingface.co/ZySec-AI)
-
 ---
 
 ## Project Vision
