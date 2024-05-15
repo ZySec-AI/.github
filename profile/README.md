@@ -45,4 +45,4 @@ We're not just developing AI-driven cybersecurity solutions; we're building a co
 
 Be a part of our story in revolutionizing cybersecurity with AI.
 
-**ZySec AI**: *Security with AI, for AI* 🚀🔒
+**ZySec AI**: *Empowering Security with AI* 🚀🔒
