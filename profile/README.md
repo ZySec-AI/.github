@@ -7,7 +7,7 @@ sdk: static
 pinned: false
 ---
 
-# ZySec AI: Security with AI, for AI
+# ZySec AI: Empowering Security with AI
 
 ---
 
