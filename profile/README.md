@@ -34,21 +34,6 @@ The **industry’s first complete sovereign intelligence platform** that transfo
 
 ---
 
-## For You
-
-### AI-Powered Social Network for Security Professionals with a Personal Copilot
-
-Experience the power of AI at your fingertips with the **ZySec AI Mobile App**, designed for security professionals on the go:
-
-- **Security Copilot** → Real-time support and insights  
-- **Real-time Alerts** → Stay updated on the latest security threats  
-- **Learning & Networking** → Access training modules and connect globally  
-- **Assessments & Actionable Insights** → Knowledge mapped to checklists and products, a first-of-its-kind approach  
-
-👉 [Download the Mobile App](https://www.zysec.app)
-
----
-
 ## For Enterprises
 
 ### CyberPod AI — Enterprise-Grade Security Solutions
