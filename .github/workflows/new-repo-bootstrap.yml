@@ -1,0 +1,61 @@
+name: bootstrap new repository
+
+on:
+  repository:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.repository.owner.login == 'ZySec-AI' }}
+    steps:
+      - name: Grant standard team access
+        env:
+          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -e
+          echo "Bootstrapping ZySec-AI/$REPO with standard teams..."
+          
+          # admins: full admin
+          gh api -X PUT "/orgs/ZySec-AI/teams/admins/repos/ZySec-AI/$REPO" -f permission=admin
+          echo "  ✓ admins → admin"
+          
+          # maintenance-team: maintain (push, issues, releases — no settings)
+          gh api -X PUT "/orgs/ZySec-AI/teams/maintenance-team/repos/ZySec-AI/$REPO" -f permission=maintain
+          echo "  ✓ maintenance-team → maintain"
+          
+          # security-team: triage (read + manage issues, security via org-level Security Manager role)
+          gh api -X PUT "/orgs/ZySec-AI/teams/security-team/repos/ZySec-AI/$REPO" -f permission=triage
+          echo "  ✓ security-team → triage"
+          
+          # Apply repo settings
+          gh api -X PATCH "/repos/ZySec-AI/$REPO" \
+            -F delete_branch_on_merge=true \
+            -F has_wiki=false \
+            -F allow_squash_merge=true \
+            -F allow_merge_commit=false \
+            -F allow_rebase_merge=false \
+            -F allow_auto_merge=true \
+            -F allow_update_branch=true \
+            -F squash_merge_commit_title=PR_TITLE \
+            -F squash_merge_commit_message=PR_BODY \
+            -F web_commit_signoff_required=true
+          echo "  ✓ repo settings standardised"
+          
+          # Set default branch to develop if not already
+          DEFAULT=$(gh api "/repos/ZySec-AI/$REPO" --jq '.default_branch')
+          if [ "$DEFAULT" != "develop" ]; then
+            # Create develop from current default if missing
+            CURRENT_SHA=$(gh api "/repos/ZySec-AI/$REPO/git/refs/heads/$DEFAULT" --jq '.object.sha' 2>/dev/null || echo "")
+            if [ -n "$CURRENT_SHA" ]; then
+              gh api -X POST "/repos/ZySec-AI/$REPO/git/refs" -f ref=refs/heads/develop -f sha="$CURRENT_SHA" 2>/dev/null || true
+              gh api -X PATCH "/repos/ZySec-AI/$REPO" -f default_branch=develop 2>/dev/null || true
+              echo "  ✓ default branch set to develop"
+            fi
+          fi
+          
+          echo ""
+          echo "✅ ZySec-AI/$REPO bootstrapped"
