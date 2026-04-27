@@ -1,61 +1,82 @@
-name: bootstrap new repository
+name: bootstrap new repositories
 
 on:
-  repository:
-    types: [created]
+  schedule:
+    - cron: '*/15 * * * *'   # every 15 minutes
+  workflow_dispatch:          # manual trigger
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/new-repo-bootstrap.yml'
 
 permissions: {}
+
+concurrency:
+  group: bootstrap-new-repos
+  cancel-in-progress: false
 
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
-    if: ${{ github.event.repository.owner.login == 'ZySec-AI' }}
     steps:
-      - name: Grant standard team access
+      - name: Find and bootstrap new repos
         env:
           GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
-          REPO: ${{ github.event.repository.name }}
         run: |
-          set -e
-          echo "Bootstrapping ZySec-AI/$REPO with standard teams..."
+          set -euo pipefail
           
-          # admins: full admin
-          gh api -X PUT "/orgs/ZySec-AI/teams/admins/repos/ZySec-AI/$REPO" -f permission=admin
-          echo "  ✓ admins → admin"
+          echo "Scanning ZySec-AI for repos missing standard team grants..."
           
-          # maintenance-team: maintain (push, issues, releases — no settings)
-          gh api -X PUT "/orgs/ZySec-AI/teams/maintenance-team/repos/ZySec-AI/$REPO" -f permission=maintain
-          echo "  ✓ maintenance-team → maintain"
+          # Get all repos in org
+          REPOS=$(gh api --paginate /orgs/ZySec-AI/repos --jq '.[].name')
+          BOOTSTRAPPED=0
+          SKIPPED=0
           
-          # security-team: triage (read + manage issues, security via org-level Security Manager role)
-          gh api -X PUT "/orgs/ZySec-AI/teams/security-team/repos/ZySec-AI/$REPO" -f permission=triage
-          echo "  ✓ security-team → triage"
-          
-          # Apply repo settings
-          gh api -X PATCH "/repos/ZySec-AI/$REPO" \
-            -F delete_branch_on_merge=true \
-            -F has_wiki=false \
-            -F allow_squash_merge=true \
-            -F allow_merge_commit=false \
-            -F allow_rebase_merge=false \
-            -F allow_auto_merge=true \
-            -F allow_update_branch=true \
-            -F squash_merge_commit_title=PR_TITLE \
-            -F squash_merge_commit_message=PR_BODY \
-            -F web_commit_signoff_required=true
-          echo "  ✓ repo settings standardised"
-          
-          # Set default branch to develop if not already
-          DEFAULT=$(gh api "/repos/ZySec-AI/$REPO" --jq '.default_branch')
-          if [ "$DEFAULT" != "develop" ]; then
-            # Create develop from current default if missing
-            CURRENT_SHA=$(gh api "/repos/ZySec-AI/$REPO/git/refs/heads/$DEFAULT" --jq '.object.sha' 2>/dev/null || echo "")
-            if [ -n "$CURRENT_SHA" ]; then
-              gh api -X POST "/repos/ZySec-AI/$REPO/git/refs" -f ref=refs/heads/develop -f sha="$CURRENT_SHA" 2>/dev/null || true
-              gh api -X PATCH "/repos/ZySec-AI/$REPO" -f default_branch=develop 2>/dev/null || true
-              echo "  ✓ default branch set to develop"
+          for REPO in $REPOS; do
+            # Check if 'admins' team already has admin (our marker for bootstrapped)
+            CURRENT=$(gh api "/repos/ZySec-AI/$REPO/teams" --jq '.[] | select(.slug=="admins") | .permission' 2>/dev/null || echo "")
+            
+            if [ "$CURRENT" = "admin" ]; then
+              SKIPPED=$((SKIPPED+1))
+              continue
             fi
-          fi
+            
+            echo ""
+            echo "→ Bootstrapping ZySec-AI/$REPO"
+            
+            # Grant standard teams
+            gh api -X PUT "/orgs/ZySec-AI/teams/admins/repos/ZySec-AI/$REPO" -f permission=admin && echo "  ✓ admins → admin"
+            gh api -X PUT "/orgs/ZySec-AI/teams/maintenance-team/repos/ZySec-AI/$REPO" -f permission=maintain && echo "  ✓ maintenance-team → maintain"
+            gh api -X PUT "/orgs/ZySec-AI/teams/security-team/repos/ZySec-AI/$REPO" -f permission=triage && echo "  ✓ security-team → triage"
+            
+            # Apply standard repo settings
+            gh api -X PATCH "/repos/ZySec-AI/$REPO" \
+              -F delete_branch_on_merge=true \
+              -F has_wiki=false \
+              -F allow_squash_merge=true \
+              -F allow_merge_commit=false \
+              -F allow_rebase_merge=false \
+              -F allow_auto_merge=true \
+              -F allow_update_branch=true \
+              -F squash_merge_commit_title=PR_TITLE \
+              -F squash_merge_commit_message=PR_BODY \
+              -F web_commit_signoff_required=true >/dev/null
+            echo "  ✓ standardised settings"
+            
+            # Ensure default branch is develop (create from current default if missing)
+            DEFAULT=$(gh api "/repos/ZySec-AI/$REPO" --jq '.default_branch')
+            if [ "$DEFAULT" != "develop" ]; then
+              CURRENT_SHA=$(gh api "/repos/ZySec-AI/$REPO/git/refs/heads/$DEFAULT" --jq '.object.sha' 2>/dev/null || echo "")
+              if [ -n "$CURRENT_SHA" ]; then
+                gh api -X POST "/repos/ZySec-AI/$REPO/git/refs" -f ref=refs/heads/develop -f sha="$CURRENT_SHA" 2>/dev/null || true
+                gh api -X PATCH "/repos/ZySec-AI/$REPO" -f default_branch=develop >/dev/null && echo "  ✓ default branch → develop"
+              fi
+            fi
+            
+            BOOTSTRAPPED=$((BOOTSTRAPPED+1))
+          done
           
           echo ""
-          echo "✅ ZySec-AI/$REPO bootstrapped"
+          echo "═══════════════════════════════════════════"
+          echo "Bootstrapped: $BOOTSTRAPPED | Already up-to-date: $SKIPPED"
+          echo "═══════════════════════════════════════════"
