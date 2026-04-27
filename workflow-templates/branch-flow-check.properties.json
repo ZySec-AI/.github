@@ -1,0 +1,6 @@
+{
+  "name": "ZySec AI — Branch Flow & Naming Check",
+  "description": "Validates Conventional Commits branch naming and merge flow (feature → develop → stage → release).",
+  "iconName": "branch",
+  "categories": ["Code Quality", "Continuous Integration"]
+}
