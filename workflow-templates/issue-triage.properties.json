@@ -1,0 +1,6 @@
+{
+  "name": "ZySec AI — Issue Triage",
+  "description": "Auto-triages new issues: classifies type/severity/dimension, asks for missing info, decides if auto-fixable. Skip with label 'bot-skip'.",
+  "iconName": "tag",
+  "categories": ["Issue Management"]
+}

@@ -1,34 +1,33 @@
 name: code review (reusable)
 
-# Reusable workflow called by every repo on develop merges.
-# Runs Claude Code in a container against z.ai's GLM-5.1.
-#
-# Caller wires it like:
-#
-#   jobs:
-#     review:
-#       uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
-#       secrets: inherit
+# Dispatched by every repo's caller workflows. Routes to one of four modes:
+#   - audit       (push to develop, post-merge)       — current behaviour
+#   - pr-review   (pull_request open/sync)            — inline + COMMENT review
+#   - issue-triage(issues opened/edited)              — classify + label
+#   - issue-fix   (issue labeled bot-fix-please)      — attempt auto-fix → PR
 
 on:
   workflow_call:
     inputs:
+      mode:
+        description: 'audit | pr-review | issue-triage | issue-fix'
+        type: string
+        default: 'audit'
       image_tag:
-        description: 'Container image tag to use'
         type: string
         default: 'latest'
       fail_on:
-        description: 'Severity that fails the job (CRITICAL | HIGH | MEDIUM | NEVER)'
+        description: 'CRITICAL | HIGH | MEDIUM | NEVER'
         type: string
         default: 'CRITICAL'
 
 permissions:
-  contents: read
+  contents: write       # issue-fix needs to push a branch
   issues: write
   pull-requests: write
 
 jobs:
-  review:
+  agent:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -38,23 +37,32 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Determine diff range
-        id: range
+      - name: Determine context (mode-specific)
+        id: ctx
         run: |
-          # For push events: github.event.before → github.sha
-          # For pull_request: base ref → head ref
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "base=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
-            echo "head=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-          else
-            BASE="${{ github.event.before }}"
-            # First push to a branch has before = 0000... — fall back to develop~1
-            if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then
-              BASE=$(git rev-parse HEAD~1 2>/dev/null || echo "${{ github.sha }}")
-            fi
-            echo "base=$BASE" >> $GITHUB_OUTPUT
-            echo "head=${{ github.sha }}" >> $GITHUB_OUTPUT
-          fi
+          MODE="${{ inputs.mode }}"
+          echo "mode=$MODE" >> $GITHUB_OUTPUT
+
+          case "$MODE" in
+            audit)
+              BASE="${{ github.event.before }}"
+              if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then
+                BASE=$(git rev-parse HEAD~1 2>/dev/null || echo "${{ github.sha }}")
+              fi
+              echo "base=$BASE" >> $GITHUB_OUTPUT
+              echo "head=${{ github.sha }}" >> $GITHUB_OUTPUT
+              ;;
+            pr-review)
+              echo "base=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
+              echo "head=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+              echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+              ;;
+            issue-triage|issue-fix)
+              echo "issue_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+              echo "base=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+              echo "head=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+              ;;
+          esac
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -63,7 +71,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run code reviewer
+      - name: Run agent
         env:
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
           ORG_BOOTSTRAP_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
@@ -74,7 +82,10 @@ jobs:
             -e ANTHROPIC_AUTH_TOKEN="$ZAI_API_KEY" \
             -e GH_TOKEN="$ORG_BOOTSTRAP_TOKEN" \
             -e GITHUB_REPOSITORY="${{ github.repository }}" \
-            -e BASE_SHA="${{ steps.range.outputs.base }}" \
-            -e HEAD_SHA="${{ steps.range.outputs.head }}" \
+            -e MODE="${{ inputs.mode }}" \
+            -e BASE_SHA="${{ steps.ctx.outputs.base }}" \
+            -e HEAD_SHA="${{ steps.ctx.outputs.head }}" \
+            -e PR_NUMBER="${{ steps.ctx.outputs.pr_number }}" \
+            -e ISSUE_NUMBER="${{ steps.ctx.outputs.issue_number }}" \
             -e REVIEW_FAIL_ON="${{ inputs.fail_on }}" \
             ghcr.io/zysec-ai/code-reviewer:${{ inputs.image_tag }}

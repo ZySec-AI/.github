@@ -1,0 +1,6 @@
+{
+  "name": "ZySec AI — PR Review (Claude Code via z.ai)",
+  "description": "On every PR opened against develop: runs Claude Code review, posts inline comments + COMMENT-type review with developer suggestions. Skip with label 'bot-skip'.",
+  "iconName": "git-pull-request",
+  "categories": ["Code Quality", "Continuous Integration", "Security"]
+}
