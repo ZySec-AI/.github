@@ -13,6 +13,11 @@ on:
         description: 'Action ref (branch/tag/sha of code-reviewer)'
         type: string
         default: 'main'
+    secrets:
+      ZAI_API_KEY:
+        required: true
+      ORG_BOOTSTRAP_TOKEN:
+        required: true
 
 jobs:
   agent:
