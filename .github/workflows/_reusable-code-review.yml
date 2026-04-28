@@ -21,10 +21,6 @@ on:
         type: string
         default: 'CRITICAL'
 
-permissions:
-  contents: write       # issue-fix needs to push a branch
-  issues: write
-  pull-requests: write
 
 jobs:
   agent:
