@@ -12,7 +12,7 @@ on:
       ref:
         description: 'Action ref (branch/tag/sha of code-reviewer)'
         type: string
-        default: 'main'
+        default: 'develop'
     secrets:
       ZAI_API_KEY:
         required: true
