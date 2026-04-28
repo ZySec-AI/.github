@@ -1,0 +1,27 @@
+[
+  {"name": "bot-fix-please",   "color": "0e8a16", "description": "Opt-in: ask the AI bot to attempt an auto-fix"},
+  {"name": "bot-skip",         "color": "ededed", "description": "Skip all bot processing on this issue/PR"},
+  {"name": "bot-fixed",        "color": "1f6feb", "description": "Bot opened a PR that may close this issue"},
+  {"name": "bot-low-confidence","color": "fbca04","description": "Bot tried to fix but gave up — needs human"},
+  {"name": "bot-reviewed",     "color": "6f42c1", "description": "PR has been reviewed by the bot"},
+  {"name": "review",           "color": "6f42c1", "description": "From a /review audit"},
+  {"name": "auto-fixable",     "color": "0e8a16", "description": "Bot assessed this as likely auto-fixable"},
+  {"name": "needs-info",       "color": "fbca04", "description": "Requester needs to provide more context"},
+
+  {"name": "severity:critical","color": "b60205", "description": "Critical severity — fix immediately"},
+  {"name": "severity:high",    "color": "d93f0b", "description": "High severity"},
+  {"name": "severity:medium",  "color": "fbca04", "description": "Medium severity"},
+  {"name": "severity:low",     "color": "c2e0c6", "description": "Low severity"},
+
+  {"name": "type:bug",         "color": "d73a4a", "description": "Bug or defect"},
+  {"name": "type:feature",     "color": "a2eeef", "description": "Feature request"},
+  {"name": "type:question",    "color": "d876e3", "description": "Question or support request"},
+  {"name": "type:docs",        "color": "0075ca", "description": "Documentation"},
+  {"name": "type:chore",       "color": "ededed", "description": "Maintenance / tooling"},
+
+  {"name": "dimension:security","color":"ee0701", "description": "Security finding (OWASP, CVE, secrets)"},
+  {"name": "dimension:quality", "color":"5319e7", "description": "Code quality (dead code, complexity, conventions)"},
+  {"name": "dimension:deps",    "color":"0366d6", "description": "Dependency health (outdated, vulnerable)"},
+  {"name": "dimension:ui",      "color":"e99695", "description": "UI / accessibility"},
+  {"name": "dimension:perf",    "color":"f9d0c4", "description": "Performance"}
+]

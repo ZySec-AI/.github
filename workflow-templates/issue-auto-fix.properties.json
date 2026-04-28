@@ -1,0 +1,6 @@
+{
+  "name": "ZySec AI — Issue Auto-Fix",
+  "description": "When 'bot-fix-please' label is added to an issue, the bot attempts a fix. Strict gates: tests pass + ≤200 line diff + no security files + scope-bounded. PR only opened if confident.",
+  "iconName": "rocket",
+  "categories": ["Automation"]
+}

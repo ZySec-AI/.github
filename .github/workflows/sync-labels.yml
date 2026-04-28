@@ -1,0 +1,69 @@
+name: sync canonical labels org-wide
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # hourly
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/labels/labels.json'
+      - '.github/workflows/sync-labels.yml'
+
+permissions: {}
+
+concurrency:
+  group: sync-labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync labels to all org repos
+        env:
+          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          
+          REPOS=$(gh api --paginate /orgs/ZySec-AI/repos --jq '.[] | select(.archived==false) | .name')
+          LABELS_FILE=".github/labels/labels.json"
+          
+          CREATED=0
+          UPDATED=0
+          REPOS_TOUCHED=0
+          
+          for REPO in $REPOS; do
+            REPO_TOUCHED=false
+            
+            # For each canonical label
+            jq -c '.[]' "$LABELS_FILE" | while read -r LABEL; do
+              NAME=$(echo "$LABEL" | jq -r '.name')
+              COLOR=$(echo "$LABEL" | jq -r '.color')
+              DESC=$(echo "$LABEL" | jq -r '.description')
+              
+              # Check if label exists
+              EXISTING=$(gh api "/repos/ZySec-AI/$REPO/labels/$NAME" 2>/dev/null || echo "")
+              
+              if [ -z "$EXISTING" ]; then
+                # Create
+                gh api -X POST "/repos/ZySec-AI/$REPO/labels" \
+                  -f name="$NAME" -f color="$COLOR" -f description="$DESC" >/dev/null 2>&1 \
+                  && echo "  + $REPO: created '$NAME'"
+              else
+                # Update if color/desc differ
+                CUR_COLOR=$(echo "$EXISTING" | jq -r '.color')
+                CUR_DESC=$(echo "$EXISTING" | jq -r '.description // ""')
+                if [ "$CUR_COLOR" != "$COLOR" ] || [ "$CUR_DESC" != "$DESC" ]; then
+                  gh api -X PATCH "/repos/ZySec-AI/$REPO/labels/$NAME" \
+                    -f color="$COLOR" -f description="$DESC" >/dev/null 2>&1 \
+                    && echo "  ~ $REPO: updated '$NAME'"
+                fi
+              fi
+            done
+          done
+          
+          echo ""
+          echo "✓ Label sync complete"
