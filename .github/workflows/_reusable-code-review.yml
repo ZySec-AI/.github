@@ -9,10 +9,6 @@ on:
       fail_on:
         type: string
         default: 'CRITICAL'
-      ref:
-        description: 'Action ref (branch/tag/sha of code-reviewer)'
-        type: string
-        default: 'develop'
     secrets:
       ZAI_API_KEY:
         required: true
@@ -56,7 +52,7 @@ jobs:
           esac
 
       - name: Run code reviewer
-        uses: ZySec-AI/code-reviewer@${{ inputs.ref }}
+        uses: ZySec-AI/code-reviewer@develop
         with:
           mode: ${{ inputs.mode }}
           zai-api-key: ${{ secrets.ZAI_API_KEY }}
