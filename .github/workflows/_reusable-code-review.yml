@@ -1,26 +1,18 @@
 name: code review (reusable)
 
-# Dispatched by every repo's caller workflows. Routes to one of four modes:
-#   - audit       (push to develop, post-merge)       — current behaviour
-#   - pr-review   (pull_request open/sync)            — inline + COMMENT review
-#   - issue-triage(issues opened/edited)              — classify + label
-#   - issue-fix   (issue labeled bot-fix-please)      — attempt auto-fix → PR
-
 on:
   workflow_call:
     inputs:
       mode:
-        description: 'audit | pr-review | issue-triage | issue-fix'
         type: string
         default: 'audit'
-      image_tag:
-        type: string
-        default: 'latest'
       fail_on:
-        description: 'CRITICAL | HIGH | MEDIUM | NEVER'
         type: string
         default: 'CRITICAL'
-
+      ref:
+        description: 'Action ref (branch/tag/sha of code-reviewer)'
+        type: string
+        default: 'main'
 
 jobs:
   agent:
@@ -28,17 +20,15 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout (full history)
+      - name: Checkout repo under review
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Determine context (mode-specific)
+      - name: Determine context
         id: ctx
         run: |
           MODE="${{ inputs.mode }}"
-          echo "mode=$MODE" >> $GITHUB_OUTPUT
-
           case "$MODE" in
             audit)
               BASE="${{ github.event.before }}"
@@ -60,28 +50,14 @@ jobs:
               ;;
           esac
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Run code reviewer
+        uses: ZySec-AI/code-reviewer@${{ inputs.ref }}
         with:
-          registry: ghcr.io
-          username: zysec-bot
-          password: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
-
-      - name: Run agent
-        env:
-          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
-          ORG_BOOTSTRAP_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
-        run: |
-          docker run --rm \
-            -v "$PWD":/workspace \
-            -e ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic" \
-            -e ANTHROPIC_AUTH_TOKEN="$ZAI_API_KEY" \
-            -e GH_TOKEN="$ORG_BOOTSTRAP_TOKEN" \
-            -e GITHUB_REPOSITORY="${{ github.repository }}" \
-            -e MODE="${{ inputs.mode }}" \
-            -e BASE_SHA="${{ steps.ctx.outputs.base }}" \
-            -e HEAD_SHA="${{ steps.ctx.outputs.head }}" \
-            -e PR_NUMBER="${{ steps.ctx.outputs.pr_number }}" \
-            -e ISSUE_NUMBER="${{ steps.ctx.outputs.issue_number }}" \
-            -e REVIEW_FAIL_ON="${{ inputs.fail_on }}" \
-            ghcr.io/zysec-ai/code-reviewer:${{ inputs.image_tag }}
+          mode: ${{ inputs.mode }}
+          zai-api-key: ${{ secrets.ZAI_API_KEY }}
+          github-token: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          base-sha: ${{ steps.ctx.outputs.base }}
+          head-sha: ${{ steps.ctx.outputs.head }}
+          pr-number: ${{ steps.ctx.outputs.pr_number }}
+          issue-number: ${{ steps.ctx.outputs.issue_number }}
+          fail-on: ${{ inputs.fail_on }}
