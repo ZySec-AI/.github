@@ -64,8 +64,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: zysec-bot
+          password: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
 
       - name: Run agent
         env:
