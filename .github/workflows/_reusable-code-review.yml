@@ -9,8 +9,14 @@ on:
       fail_on:
         type: string
         default: 'CRITICAL'
+      model:
+        type: string
+        default: 'deepseek/deepseek-v4-pro'
+      base_url:
+        type: string
+        default: 'https://openrouter.ai/api'
     secrets:
-      ZAI_API_KEY:
+      OPENROUTER_API_KEY:
         required: true
       ORG_BOOTSTRAP_TOKEN:
         required: true
@@ -55,7 +61,9 @@ jobs:
         uses: ZySec-AI/code-reviewer@develop
         with:
           mode: ${{ inputs.mode }}
-          zai-api-key: ${{ secrets.ZAI_API_KEY }}
+          zai-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          zai-base-url: ${{ inputs.base_url }}
+          model: ${{ inputs.model }}
           github-token: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
           base-sha: ${{ steps.ctx.outputs.base }}
           head-sha: ${{ steps.ctx.outputs.head }}
