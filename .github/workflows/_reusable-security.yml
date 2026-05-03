@@ -74,6 +74,7 @@ jobs:
 
   sast-codeql:
     name: SAST — CodeQL
+    if: inputs.python || inputs.node
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -86,8 +87,7 @@ jobs:
           inputs.python && inputs.node && '["python","javascript"]' ||
           inputs.python && '["python"]' ||
           inputs.node && '["javascript"]' ||
-          inputs.rust && '["cpp"]' ||
-          '["python"]'
+          '[]'
         ) }}
     steps:
       - uses: actions/checkout@v4

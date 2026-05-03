@@ -2,7 +2,7 @@ name: bootstrap new repositories
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 * * * *'   # hourly (was every 15 min — 4x fewer API calls)
   workflow_dispatch:
   push:
     branches: [main]
@@ -64,8 +64,11 @@ jobs:
             ["stale.yml"]="stale PR (2d) and issue (7d) notifier"
             ["sprint-retro.yml"]="auto sprint retro issue every Friday"
             # Developer education
-            ["merge-comment.yml"]="post controls summary + devops-practices links on merge to develop"
+            ["merge-comment.yml"]="post controls summary + devops-practices links on PR open"
           )
+
+          # Build sorted list of workflow filenames for fast bulk-check
+          WF_LIST=$(printf '%s\n' "${!WORKFLOWS[@]}" | sort | tr '\n' ' ')
 
           BOOTSTRAPPED=0
           UPDATED=0
@@ -75,14 +78,18 @@ jobs:
             NEEDS_TEAMS=false
             NEEDS_WORKFLOW=false
 
-            # Team permission check
+            # Team permission check — single API call
             CURRENT=$(gh api "/repos/ZySec-AI/$REPO/teams" \
               --jq '.[] | select(.slug=="admins") | .permission' 2>/dev/null || echo "")
             [ "$CURRENT" != "admin" ] && NEEDS_TEAMS=true
 
-            # Check each workflow individually (fixes old skip-all-if-any-exists bug)
+            # Bulk-fetch existing workflow filenames in one API call
+            # Returns just the names of files in .github/workflows/
+            EXISTING_WFS=$(gh api "/repos/ZySec-AI/$REPO/contents/.github/workflows" \
+              --jq '.[].name' 2>/dev/null || echo "")
+
             for WF in "${!WORKFLOWS[@]}"; do
-              if ! gh api "/repos/ZySec-AI/$REPO/contents/.github/workflows/$WF" --silent 2>/dev/null; then
+              if ! echo "$EXISTING_WFS" | grep -qx "$WF"; then
                 NEEDS_WORKFLOW=true
                 break
               fi
@@ -138,9 +145,8 @@ jobs:
               TARGET_BRANCH=$(gh api "/repos/ZySec-AI/$REPO" --jq '.default_branch')
 
               for WF in "${!WORKFLOWS[@]}"; do
-                # Skip if already present
-                if gh api "/repos/ZySec-AI/$REPO/contents/.github/workflows/$WF" \
-                    --silent 2>/dev/null; then
+                # Skip if already present (use the bulk-fetched list)
+                if echo "$EXISTING_WFS" | grep -qx "$WF"; then
                   continue
                 fi
 
