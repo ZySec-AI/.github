@@ -98,7 +98,7 @@ jobs:
 
             if $NEEDS_TEAMS; then
               gh api -X PUT "/orgs/ZySec-AI/teams/admins/repos/ZySec-AI/$REPO" \
-                -f permission=admin >/dev/null && echo "  ✓ admins → admin"
+                -f permission=admin >/dev/null 2>&1 && echo "  ✓ admins → admin" || echo "  ⚠ admins team assignment skipped (403)"
               gh api -X PUT "/orgs/ZySec-AI/teams/maintenance-team/repos/ZySec-AI/$REPO" \
                 -f permission=maintain >/dev/null 2>&1 && echo "  ✓ maintenance-team → maintain" || true
               gh api -X PUT "/orgs/ZySec-AI/teams/security-team/repos/ZySec-AI/$REPO" \
@@ -114,8 +114,8 @@ jobs:
                 -F allow_update_branch=true \
                 -F squash_merge_commit_title=PR_TITLE \
                 -F squash_merge_commit_message=PR_BODY \
-                -F web_commit_signoff_required=true >/dev/null
-              echo "  ✓ standardised repo settings"
+                -F web_commit_signoff_required=true >/dev/null 2>&1 \
+                && echo "  ✓ standardised repo settings" || echo "  ⚠ repo settings skipped (403)"
 
               # Ensure default branch is develop
               DEFAULT=$(gh api "/repos/ZySec-AI/$REPO" --jq '.default_branch')
