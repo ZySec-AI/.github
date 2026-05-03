@@ -10,7 +10,8 @@ on:
       - '.github/workflows/new-repo-bootstrap.yml'
       - 'workflow-templates/*.yml'
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
   group: bootstrap-new-repos
