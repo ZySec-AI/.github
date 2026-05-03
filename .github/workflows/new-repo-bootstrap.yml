@@ -63,6 +63,8 @@ jobs:
             ["pr-standards.yml"]="PR description + label + milestone validation"
             ["stale.yml"]="stale PR (2d) and issue (7d) notifier"
             ["sprint-retro.yml"]="auto sprint retro issue every Friday"
+            # Developer education
+            ["merge-comment.yml"]="post controls summary + devops-practices links on merge to develop"
           )
 
           BOOTSTRAPPED=0
