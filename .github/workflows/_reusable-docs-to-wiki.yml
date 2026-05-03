@@ -1,0 +1,184 @@
+name: docs-to-wiki (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      wiki_files:
+        type: string
+        default: 'README.md,product.md,architecture.md,technology.md,implementation.md,api.md'
+        description: 'Comma-separated list of docs/ files to sync to wiki'
+      docs_path:
+        type: string
+        default: 'docs'
+        description: 'Path to docs directory in the repo'
+      generate_sidebar:
+        type: boolean
+        default: true
+        description: 'Auto-generate _Sidebar.md from synced pages'
+      dry_run:
+        type: boolean
+        default: false
+        description: 'Preview changes without pushing to wiki'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Check docs/ exists
+        id: check
+        run: |
+          if [ ! -d "${{ inputs.docs_path }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::warning::No ${{ inputs.docs_path }}/ directory found — skipping wiki sync"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Clone wiki repo
+        if: steps.check.outputs.skip == 'false' && !inputs.dry_run
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git clone "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git" wiki || {
+            echo "::warning::Wiki not enabled or empty — initializing"
+            mkdir wiki
+            cd wiki
+            git init
+            git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git"
+          }
+
+      - name: Sync docs to wiki
+        if: steps.check.outputs.skip == 'false'
+        id: sync
+        run: |
+          DOCS="${{ inputs.docs_path }}"
+          WIKI_FILES="${{ inputs.wiki_files }}"
+          SYNCED=""
+          SKIPPED=""
+
+          mkdir -p wiki
+
+          IFS=',' read -ra FILES <<< "$WIKI_FILES"
+          for file in "${FILES[@]}"; do
+            file=$(echo "$file" | xargs)  # trim whitespace
+            src="$DOCS/$file"
+
+            if [ ! -f "$src" ]; then
+              SKIPPED="$SKIPPED $file"
+              continue
+            fi
+
+            # README.md → Home.md
+            if [ "$file" = "README.md" ]; then
+              dest="wiki/Home.md"
+            else
+              dest="wiki/${file}"
+            fi
+
+            # Rewrite relative ./file.md links to [[Page Title]] wiki syntax
+            python3 - "$src" "$dest" <<'PYEOF'
+          import sys, re, os
+
+          src, dest = sys.argv[1], sys.argv[2]
+          with open(src) as f:
+              content = f.read()
+
+          def md_to_wiki_link(m):
+              text = m.group(1)
+              path = m.group(2)
+              # Only rewrite relative .md links
+              if path.startswith('http') or not path.endswith('.md'):
+                  return m.group(0)
+              page = os.path.splitext(os.path.basename(path))[0]
+              page_title = page.replace('-', ' ').replace('_', ' ').title()
+              if page.lower() == 'readme':
+                  page_title = 'Home'
+              return f'[[{page_title}]]'
+
+          content = re.sub(r'\[([^\]]+)\]\((\./[^)]+|[^/)][^)]*\.md)\)', md_to_wiki_link, content)
+
+          os.makedirs(os.path.dirname(dest) if os.path.dirname(dest) else '.', exist_ok=True)
+          with open(dest, 'w') as f:
+              f.write(content)
+          PYEOF
+
+            SYNCED="$SYNCED $file"
+            echo "  ✓ $src → $dest"
+          done
+
+          echo "synced=$SYNCED" >> $GITHUB_OUTPUT
+          echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
+
+          if [ -n "$SKIPPED" ]; then
+            echo "::notice::Skipped (not found in $DOCS/):$SKIPPED"
+          fi
+
+      - name: Generate _Sidebar.md
+        if: steps.check.outputs.skip == 'false' && inputs.generate_sidebar
+        run: |
+          DOCS="${{ inputs.docs_path }}"
+          WIKI_FILES="${{ inputs.wiki_files }}"
+          SIDEBAR="wiki/_Sidebar.md"
+
+          echo "## ${{ github.event.repository.name }}" > "$SIDEBAR"
+          echo "" >> "$SIDEBAR"
+          echo "**Documentation**" >> "$SIDEBAR"
+          echo "" >> "$SIDEBAR"
+
+          IFS=',' read -ra FILES <<< "$WIKI_FILES"
+          for file in "${FILES[@]}"; do
+            file=$(echo "$file" | xargs)
+            src="$DOCS/$file"
+            [ ! -f "$src" ] && continue
+
+            if [ "$file" = "README.md" ]; then
+              echo "- [[Home]]" >> "$SIDEBAR"
+            else
+              page=$(basename "$file" .md)
+              title=$(echo "$page" | sed 's/-/ /g; s/_/ /g; s/\b\(.\)/\u\1/g')
+              echo "- [[$title]]" >> "$SIDEBAR"
+            fi
+          done
+
+          echo "" >> "$SIDEBAR"
+          echo "---" >> "$SIDEBAR"
+          echo "*Auto-generated from \`$DOCS/\`*" >> "$SIDEBAR"
+          echo "  ✓ Generated _Sidebar.md"
+
+      - name: Commit and push wiki
+        if: steps.check.outputs.skip == 'false' && !inputs.dry_run
+        run: |
+          cd wiki
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "::notice::No wiki changes to commit"
+            exit 0
+          fi
+
+          SYNCED="${{ steps.sync.outputs.synced }}"
+          git commit -m "docs: sync wiki from docs/ [$(date -u +%Y-%m-%d)]
+
+          Synced:$SYNCED
+          Source: ${{ github.repository }}@${{ github.sha }}"
+
+          git push origin HEAD:master || git push origin HEAD:main
+          echo "::notice::Wiki updated successfully"
+
+      - name: Dry run summary
+        if: inputs.dry_run
+        run: |
+          echo "### Dry Run — Wiki Sync Preview" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Would sync: \`${{ steps.sync.outputs.synced }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Would skip: \`${{ steps.sync.outputs.skipped }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Run without \`dry_run: true\` to apply." >> $GITHUB_STEP_SUMMARY
