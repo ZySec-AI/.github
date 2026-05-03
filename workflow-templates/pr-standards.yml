@@ -60,7 +60,7 @@ jobs:
       - name: Hotfix fast-track
         if: contains(github.event.pull_request.labels.*.name, 'hotfix')
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           PR="${{ github.event.pull_request.number }}"
           REPO="${{ github.repository }}"

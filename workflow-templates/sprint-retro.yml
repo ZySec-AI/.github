@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Generate retro issue
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
           REPO: ${{ github.repository }}
         run: |
           WEEK=$(date +%Y-W%V)

@@ -23,21 +23,19 @@ jobs:
     steps:
       - name: Verify token
         env:
-          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
-          # Requires ORG_ADMIN_TOKEN (preferred) or ORG_BOOTSTRAP_TOKEN with:
-          #   - visibility = All repositories
-          #   - scopes: repo, workflow, admin:org (for team management)
+          # Requires ORG_ADMIN_TOKEN with visibility=All repositories
+          # and scopes: repo, workflow, admin:org
           if [ -z "$GH_TOKEN" ]; then
-            echo "::error::ORG_ADMIN_TOKEN and ORG_BOOTSTRAP_TOKEN are both empty."
-            echo "::error::Fix: org Settings → Secrets → set visibility to 'All repositories'"
+            echo "::error::ORG_ADMIN_TOKEN is empty or not visible to this repo."
             exit 1
           fi
           gh auth status
 
       - name: Find and bootstrap repos
         env:
-          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           set -euo pipefail
 

@@ -24,7 +24,7 @@ jobs:
 
       - name: Sync labels to all org repos
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           set -euo pipefail
           

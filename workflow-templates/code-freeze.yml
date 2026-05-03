@@ -33,7 +33,7 @@ jobs:
 
       - name: Create freeze reminder issue
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           REPO="${{ github.repository }}"
           DATE=$(date +%Y-%m-%d)

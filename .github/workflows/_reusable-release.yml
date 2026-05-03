@@ -10,7 +10,7 @@ on:
         type: boolean
         default: true
     secrets:
-      ORG_BOOTSTRAP_TOKEN:
+      ORG_ADMIN_TOKEN:
         required: true
       TEAMS_WEBHOOK:
         required: false
@@ -43,7 +43,7 @@ jobs:
     steps:
       - name: Check qa-approved label
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           LABELS=$(gh api /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/labels \
             --jq '[.[].name] | join(",")' 2>/dev/null || echo "")
@@ -85,7 +85,7 @@ jobs:
       - name: Build release notes
         id: notes
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)
           echo "Changes since $LAST_TAG:"
@@ -112,7 +112,7 @@ jobs:
 
       - name: Create release
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           VERSION="${{ needs.changelog.outputs.version }}"
           NOTES="${{ needs.changelog.outputs.notes }}"

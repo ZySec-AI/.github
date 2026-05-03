@@ -18,7 +18,7 @@ on:
     secrets:
       OPENROUTER_API_KEY:
         required: true
-      ORG_BOOTSTRAP_TOKEN:
+      ORG_ADMIN_TOKEN:
         required: true
 
 jobs:
@@ -64,7 +64,7 @@ jobs:
           zai-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           zai-base-url: ${{ inputs.base_url }}
           model: ${{ inputs.model }}
-          github-token: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          github-token: ${{ secrets.ORG_ADMIN_TOKEN }}
           base-sha: ${{ steps.ctx.outputs.base }}
           head-sha: ${{ steps.ctx.outputs.head }}
           pr-number: ${{ steps.ctx.outputs.pr_number }}

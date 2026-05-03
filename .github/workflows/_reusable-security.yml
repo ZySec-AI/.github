@@ -19,7 +19,7 @@ on:
         type: string
         default: ''
     secrets:
-      ORG_BOOTSTRAP_TOKEN:
+      ORG_ADMIN_TOKEN:
         required: true
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
       - name: Run gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   sast-python:
