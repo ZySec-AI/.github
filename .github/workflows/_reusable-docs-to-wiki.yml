@@ -6,7 +6,7 @@ on:
       wiki_files:
         type: string
         default: 'README.md,product.md,architecture.md,technology.md,implementation.md,api.md'
-        description: 'Comma-separated list of docs/ files to sync to wiki'
+        description: 'Comma-separated list of docs/ files to sync (supports .md and .mdx)'
       docs_path:
         type: string
         default: 'docs'
@@ -71,19 +71,36 @@ jobs:
             file=$(echo "$file" | xargs)  # trim whitespace
             src="$DOCS/$file"
 
+            # If exact file not found, try swapping extension between .md and .mdx
             if [ ! -f "$src" ]; then
-              SKIPPED="$SKIPPED $file"
-              continue
+              if [[ "$file" == *.mdx ]]; then
+                alt="${file%.mdx}.md"
+              else
+                alt="${file%.md}.mdx"
+              fi
+              if [ -f "$DOCS/$alt" ]; then
+                src="$DOCS/$alt"
+                file="$alt"
+              else
+                SKIPPED="$SKIPPED $file"
+                continue
+              fi
             fi
 
-            # README.md → Home.md
-            if [ "$file" = "README.md" ]; then
+            # Determine wiki destination — always output as .md
+            base=$(basename "$file")
+            base_noext="${base%.*}"
+            base_lower=$(echo "$base_noext" | tr '[:upper:]' '[:lower:]')
+
+            if [[ "$base_lower" == "readme" || "$base_lower" == "index" ]]; then
               dest="wiki/Home.md"
             else
-              dest="wiki/${file}"
+              # Capitalise first letter for wiki page title friendliness
+              dest="wiki/${base_lower}.md"
             fi
 
-            # Rewrite relative ./file.md links to [[Page Title]] wiki syntax
+            # Convert mdx/md → clean .md: strip JSX imports, export lines, frontmatter
+            # Then rewrite relative ./file.md|mdx links to [[Page Title]] wiki syntax
             python3 - "$src" "$dest" <<'PYEOF'
           import sys, re, os
 
@@ -91,19 +108,28 @@ jobs:
           with open(src) as f:
               content = f.read()
 
+          # Strip MDX frontmatter (--- ... ---)
+          content = re.sub(r'^---[\s\S]*?---\n', '', content, count=1)
+
+          # Strip MDX-specific lines: import, export, JSX component usage
+          content = re.sub(r'^(import |export ).*$', '', content, flags=re.MULTILINE)
+
+          # Rewrite relative .md/.mdx links to [[Page Title]] wiki syntax
           def md_to_wiki_link(m):
               text = m.group(1)
               path = m.group(2)
-              # Only rewrite relative .md links
-              if path.startswith('http') or not path.endswith('.md'):
+              if path.startswith('http') or not re.search(r'\.mdx?$', path):
                   return m.group(0)
-              page = os.path.splitext(os.path.basename(path))[0]
+              page = os.path.splitext(os.path.basename(path))[0].lower()
+              if page in ('readme', 'index'):
+                  page = 'home'
               page_title = page.replace('-', ' ').replace('_', ' ').title()
-              if page.lower() == 'readme':
-                  page_title = 'Home'
               return f'[[{page_title}]]'
 
-          content = re.sub(r'\[([^\]]+)\]\((\./[^)]+|[^/)][^)]*\.md)\)', md_to_wiki_link, content)
+          content = re.sub(r'\[([^\]]+)\]\((\./[^)]+|[^/)][^)]*\.mdx?)\)', md_to_wiki_link, content)
+
+          # Clean up excess blank lines left by stripping
+          content = re.sub(r'\n{3,}', '\n\n', content).strip() + '\n'
 
           os.makedirs(os.path.dirname(dest) if os.path.dirname(dest) else '.', exist_ok=True)
           with open(dest, 'w') as f:
@@ -137,13 +163,20 @@ jobs:
           for file in "${FILES[@]}"; do
             file=$(echo "$file" | xargs)
             src="$DOCS/$file"
-            [ ! -f "$src" ] && continue
 
-            if [ "$file" = "README.md" ]; then
+            # Try alternate extension if not found
+            if [ ! -f "$src" ]; then
+              if [[ "$file" == *.mdx ]]; then alt="${file%.mdx}.md"; else alt="${file%.md}.mdx"; fi
+              [ -f "$DOCS/$alt" ] && file="$alt" || continue
+            fi
+
+            base_noext="${file%.*}"
+            base_lower=$(echo "$(basename $base_noext)" | tr '[:upper:]' '[:lower:]')
+
+            if [[ "$base_lower" == "readme" || "$base_lower" == "index" ]]; then
               echo "- [[Home]]" >> "$SIDEBAR"
             else
-              page=$(basename "$file" .md)
-              title=$(echo "$page" | sed 's/-/ /g; s/_/ /g; s/\b\(.\)/\u\1/g')
+              title=$(echo "$base_lower" | sed 's/-/ /g; s/_/ /g; s/\b\(.\)/\u\1/g')
               echo "- [[$title]]" >> "$SIDEBAR"
             fi
           done
