@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   wiki:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-docs-to-wiki.yml@main
+    uses: ZySec-AI/.github/.github/workflows/_reusable-docs-to-wiki.yml@develop
     with:
       wiki_files: 'README.md,product.md,architecture.md,technology.md,implementation.md,api.md'
       generate_sidebar: true
