@@ -80,7 +80,7 @@ jobs:
 
             # Team permission check — single API call
             CURRENT=$(gh api "/repos/ZySec-AI/$REPO/teams" \
-              --jq '.[] | select(.slug=="admins") | .permission' 2>/dev/null || echo "")
+              --jq '.[] | select(.slug=="org-admins") | .permission' 2>/dev/null || echo "")
             [ "$CURRENT" != "admin" ] && NEEDS_TEAMS=true
 
             # Bulk-fetch existing workflow filenames in one API call
@@ -104,12 +104,12 @@ jobs:
             echo "→ Bootstrapping ZySec-AI/$REPO (teams=$NEEDS_TEAMS, workflows=$NEEDS_WORKFLOW)"
 
             if $NEEDS_TEAMS; then
-              gh api -X PUT "/orgs/ZySec-AI/teams/admins/repos/ZySec-AI/$REPO" \
-                -f permission=admin >/dev/null 2>&1 && echo "  ✓ admins → admin" || echo "  ⚠ admins team assignment skipped (403)"
-              gh api -X PUT "/orgs/ZySec-AI/teams/maintenance-team/repos/ZySec-AI/$REPO" \
-                -f permission=maintain >/dev/null 2>&1 && echo "  ✓ maintenance-team → maintain" || true
-              gh api -X PUT "/orgs/ZySec-AI/teams/security-team/repos/ZySec-AI/$REPO" \
-                -f permission=triage >/dev/null 2>&1 && echo "  ✓ security-team → triage" || true
+              gh api -X PUT "/orgs/ZySec-AI/teams/org-admins/repos/ZySec-AI/$REPO" \
+                -f permission=admin >/dev/null 2>&1 && echo "  ✓ org-admins → admin" || echo "  ⚠ org-admins team assignment skipped (403)"
+              gh api -X PUT "/orgs/ZySec-AI/teams/org-maintenance/repos/ZySec-AI/$REPO" \
+                -f permission=maintain >/dev/null 2>&1 && echo "  ✓ org-maintenance → maintain" || true
+              gh api -X PUT "/orgs/ZySec-AI/teams/org-secops/repos/ZySec-AI/$REPO" \
+                -f permission=triage >/dev/null 2>&1 && echo "  ✓ org-secops → triage" || true
 
               gh api -X PATCH "/repos/ZySec-AI/$REPO" \
                 -F delete_branch_on_merge=true \
