@@ -23,21 +23,21 @@ jobs:
     steps:
       - name: Verify token
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || secrets.ORG_BOOTSTRAP_TOKEN }}
         run: |
-          # ORG_BOOTSTRAP_TOKEN must have visibility=all in org secrets settings.
-          # Go to: github.com/organizations/ZySec-AI/settings/secrets/actions
-          # Edit ORG_BOOTSTRAP_TOKEN → change from "Private repositories" to "All repositories"
+          # Requires ORG_ADMIN_TOKEN (preferred) or ORG_BOOTSTRAP_TOKEN with:
+          #   - visibility = All repositories
+          #   - scopes: repo, workflow, admin:org (for team management)
           if [ -z "$GH_TOKEN" ]; then
-            echo "::error::ORG_BOOTSTRAP_TOKEN is empty."
-            echo "::error::Fix: org Settings → Secrets → ORG_BOOTSTRAP_TOKEN → set visibility to 'All repositories'"
+            echo "::error::ORG_ADMIN_TOKEN and ORG_BOOTSTRAP_TOKEN are both empty."
+            echo "::error::Fix: org Settings → Secrets → set visibility to 'All repositories'"
             exit 1
           fi
           gh auth status
 
       - name: Find and bootstrap repos
         env:
-          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || secrets.ORG_BOOTSTRAP_TOKEN }}
         run: |
           set -euo pipefail
 
