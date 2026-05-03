@@ -147,6 +147,48 @@ jobs:
             echo "::notice::Skipped (not found in $DOCS/):$SKIPPED"
           fi
 
+      - name: Generate Home.md if missing
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          mkdir -p wiki
+          if [ ! -f "wiki/Home.md" ]; then
+            REPO="${{ github.event.repository.name }}"
+            DESC="${{ github.event.repository.description }}"
+            WIKI_FILES="${{ inputs.wiki_files }}"
+            DOCS="${{ inputs.docs_path }}"
+
+            {
+              echo "# ${REPO}"
+              echo ""
+              [ -n "$DESC" ] && echo "> ${DESC}" && echo ""
+              echo "## Documentation"
+              echo ""
+
+              IFS=',' read -ra FILES <<< "$WIKI_FILES"
+              for file in "${FILES[@]}"; do
+                file=$(echo "$file" | xargs)
+                src="$DOCS/$file"
+                if [ ! -f "$src" ]; then
+                  if [[ "$file" == *.mdx ]]; then alt="${file%.mdx}.md"; else alt="${file%.md}.mdx"; fi
+                  [ -f "$DOCS/$alt" ] && file="$alt" || continue
+                fi
+                base_noext="${file%.*}"
+                base_lower=$(echo "$(basename $base_noext)" | tr '[:upper:]' '[:lower:]')
+                [[ "$base_lower" == "readme" || "$base_lower" == "index" ]] && continue
+                title=$(echo "$base_lower" | sed 's/-/ /g; s/_/ /g; s/\b\(.\)/\u\1/g')
+                echo "- [[$title]]"
+              done
+
+              echo ""
+              echo "---"
+              echo "*Auto-generated — last updated $(date -u +%Y-%m-%d)*"
+            } > wiki/Home.md
+
+            echo "  ✓ Generated Home.md (no README found in $DOCS/)"
+          else
+            echo "  ✓ Home.md already exists — skipping auto-generation"
+          fi
+
       - name: Generate _Sidebar.md
         if: steps.check.outputs.skip == 'false' && inputs.generate_sidebar
         run: |
@@ -215,3 +257,4 @@ jobs:
           echo "Would skip: \`${{ steps.sync.outputs.skipped }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Run without \`dry_run: true\` to apply." >> $GITHUB_STEP_SUMMARY
+
