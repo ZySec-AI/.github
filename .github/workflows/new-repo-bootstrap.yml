@@ -21,6 +21,20 @@ jobs:
   bootstrap:
     runs-on: ubuntu-latest
     steps:
+      - name: Verify token
+        env:
+          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+        run: |
+          # ORG_BOOTSTRAP_TOKEN must have visibility=all in org secrets settings.
+          # Go to: github.com/organizations/ZySec-AI/settings/secrets/actions
+          # Edit ORG_BOOTSTRAP_TOKEN → change from "Private repositories" to "All repositories"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::ORG_BOOTSTRAP_TOKEN is empty."
+            echo "::error::Fix: org Settings → Secrets → ORG_BOOTSTRAP_TOKEN → set visibility to 'All repositories'"
+            exit 1
+          fi
+          gh auth status
+
       - name: Find and bootstrap repos
         env:
           GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
