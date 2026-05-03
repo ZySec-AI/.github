@@ -25,48 +25,70 @@ jobs:
           GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
         run: |
           set -euo pipefail
-          
-          REPOS=$(gh api --paginate /orgs/ZySec-AI/repos --jq '.[] | select(.archived==false) | .name')
-          
-          # Workflow files to install in every repo
+
+          REPOS=$(gh api --paginate /orgs/ZySec-AI/repos \
+            --jq '.[] | select(.archived==false) | .name')
+
+          # All workflow templates that must exist in every repo.
+          # bootstrap installs missing ones — never overwrites existing.
           declare -A WORKFLOWS=(
-            ["code-review.yml"]="audit on develop merge"
-            ["code-review-pr.yml"]="PR review on open/sync"
-            ["issue-triage.yml"]="issue triage on opened/edited"
-            ["issue-auto-fix.yml"]="auto-fix when bot-fix-please label added"
+            # AI-assisted review & triage
+            ["code-review.yml"]="AI code audit on develop push"
+            ["code-review-pr.yml"]="AI PR review on open/sync"
+            ["issue-triage.yml"]="AI issue triage on opened/edited"
+            ["issue-auto-fix.yml"]="AI auto-fix on bot-fix-please label"
+            # Branch & merge standards
+            ["branch-flow-check.yml"]="branch naming + merge flow enforcement"
+            # Security
+            ["security.yml"]="secret scan + SAST + trivy + dep-review"
+            # Quality gates
+            ["quality.yml"]="lint + type-check + coverage 80%"
+            # Release management
+            ["release.yml"]="QA gate + GitHub Release + Teams notification"
+            # Sprint process
+            ["code-freeze.yml"]="code freeze reminders Thu/Fri"
+            ["pr-standards.yml"]="PR description + label + milestone validation"
+            ["stale.yml"]="stale PR (2d) and issue (7d) notifier"
+            ["sprint-retro.yml"]="auto sprint retro issue every Friday"
           )
-          
+
           BOOTSTRAPPED=0
           UPDATED=0
           SKIPPED=0
-          
+
           for REPO in $REPOS; do
             NEEDS_TEAMS=false
             NEEDS_WORKFLOW=false
-            
-            CURRENT=$(gh api "/repos/ZySec-AI/$REPO/teams" --jq '.[] | select(.slug=="admins") | .permission' 2>/dev/null || echo "")
+
+            # Team permission check
+            CURRENT=$(gh api "/repos/ZySec-AI/$REPO/teams" \
+              --jq '.[] | select(.slug=="admins") | .permission' 2>/dev/null || echo "")
             [ "$CURRENT" != "admin" ] && NEEDS_TEAMS=true
-            
+
+            # Check each workflow individually (fixes old skip-all-if-any-exists bug)
             for WF in "${!WORKFLOWS[@]}"; do
               if ! gh api "/repos/ZySec-AI/$REPO/contents/.github/workflows/$WF" --silent 2>/dev/null; then
                 NEEDS_WORKFLOW=true
                 break
               fi
             done
-            
+
             if ! $NEEDS_TEAMS && ! $NEEDS_WORKFLOW; then
               SKIPPED=$((SKIPPED+1))
               continue
             fi
-            
+
             echo ""
             echo "→ Bootstrapping ZySec-AI/$REPO (teams=$NEEDS_TEAMS, workflows=$NEEDS_WORKFLOW)"
-            
+
             if $NEEDS_TEAMS; then
-              gh api -X PUT "/orgs/ZySec-AI/teams/admins/repos/ZySec-AI/$REPO" -f permission=admin >/dev/null && echo "  ✓ admins → admin"
-              gh api -X PUT "/orgs/ZySec-AI/teams/maintenance-team/repos/ZySec-AI/$REPO" -f permission=maintain >/dev/null && echo "  ✓ maintenance-team → maintain"
-              gh api -X PUT "/orgs/ZySec-AI/teams/security-team/repos/ZySec-AI/$REPO" -f permission=triage >/dev/null && echo "  ✓ security-team → triage"
-              
+              gh api -X PUT "/orgs/ZySec-AI/teams/admins/repos/ZySec-AI/$REPO" \
+                -f permission=admin >/dev/null && echo "  ✓ admins → admin"
+              gh api -X PUT "/orgs/ZySec-AI/teams/maintenance-team/repos/ZySec-AI/$REPO" \
+                -f permission=maintain >/dev/null 2>&1 && echo "  ✓ maintenance-team → maintain" || true
+              gh api -X PUT "/orgs/ZySec-AI/teams/security-team/repos/ZySec-AI/$REPO" \
+                -f permission=triage >/dev/null 2>&1 && echo "  ✓ security-team → triage" || true
+
               gh api -X PATCH "/repos/ZySec-AI/$REPO" \
                 -F delete_branch_on_merge=true \
                 -F has_wiki=false \
@@ -78,40 +100,61 @@ jobs:
                 -F squash_merge_commit_title=PR_TITLE \
                 -F squash_merge_commit_message=PR_BODY \
                 -F web_commit_signoff_required=true >/dev/null
-              echo "  ✓ standardised settings"
-              
+              echo "  ✓ standardised repo settings"
+
+              # Ensure default branch is develop
               DEFAULT=$(gh api "/repos/ZySec-AI/$REPO" --jq '.default_branch')
               if [ "$DEFAULT" != "develop" ]; then
-                CURRENT_SHA=$(gh api "/repos/ZySec-AI/$REPO/git/refs/heads/$DEFAULT" --jq '.object.sha' 2>/dev/null || echo "")
+                CURRENT_SHA=$(gh api "/repos/ZySec-AI/$REPO/git/refs/heads/$DEFAULT" \
+                  --jq '.object.sha' 2>/dev/null || echo "")
                 if [ -n "$CURRENT_SHA" ]; then
-                  gh api -X POST "/repos/ZySec-AI/$REPO/git/refs" -f ref=refs/heads/develop -f sha="$CURRENT_SHA" 2>/dev/null || true
-                  gh api -X PATCH "/repos/ZySec-AI/$REPO" -f default_branch=develop >/dev/null && echo "  ✓ default branch → develop"
+                  gh api -X POST "/repos/ZySec-AI/$REPO/git/refs" \
+                    -f ref=refs/heads/develop \
+                    -f sha="$CURRENT_SHA" 2>/dev/null || true
+                  gh api -X PATCH "/repos/ZySec-AI/$REPO" \
+                    -f default_branch=develop >/dev/null && echo "  ✓ default branch → develop"
                 fi
               fi
+
               BOOTSTRAPPED=$((BOOTSTRAPPED+1))
             fi
-            
+
             if $NEEDS_WORKFLOW; then
               TARGET_BRANCH=$(gh api "/repos/ZySec-AI/$REPO" --jq '.default_branch')
+
               for WF in "${!WORKFLOWS[@]}"; do
-                if gh api "/repos/ZySec-AI/$REPO/contents/.github/workflows/$WF" --silent 2>/dev/null; then
+                # Skip if already present
+                if gh api "/repos/ZySec-AI/$REPO/contents/.github/workflows/$WF" \
+                    --silent 2>/dev/null; then
                   continue
                 fi
-                CONTENT=$(gh api "/repos/ZySec-AI/.github/contents/workflow-templates/$WF" --jq '.content' | base64 -d)
+
+                # Fetch template content
+                CONTENT=$(gh api "/repos/ZySec-AI/.github/contents/workflow-templates/$WF" \
+                  --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+
+                if [ -z "$CONTENT" ]; then
+                  echo "  ⚠ template $WF not found in .github repo, skipping"
+                  continue
+                fi
+
                 ENCODED=$(printf '%s' "$CONTENT" | base64 -w0)
+
                 gh api -X PUT "/repos/ZySec-AI/$REPO/contents/.github/workflows/$WF" \
-                  -f message="ci: install $WF (${WORKFLOWS[$WF]})" \
+                  -f message="ci: install $WF [bootstrap]" \
                   -f content="$ENCODED" \
                   -f branch="$TARGET_BRANCH" >/dev/null 2>&1 \
-                  && echo "  ✓ installed $WF"
+                  && echo "  ✓ installed $WF" \
+                  || echo "  ⚠ failed to install $WF (may need write access)"
               done
+
               UPDATED=$((UPDATED+1))
             fi
           done
-          
+
           echo ""
           echo "═══════════════════════════════════════════"
-          echo "Bootstrapped (new repos): $BOOTSTRAPPED"
-          echo "Updated (workflows added): $UPDATED"
-          echo "Already up-to-date: $SKIPPED"
+          echo "Bootstrapped (settings+teams): $BOOTSTRAPPED"
+          echo "Updated (workflows installed): $UPDATED"
+          echo "Already up-to-date:            $SKIPPED"
           echo "═══════════════════════════════════════════"

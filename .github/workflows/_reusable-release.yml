@@ -1,0 +1,169 @@
+name: release (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        default: production
+      notify:
+        type: boolean
+        default: true
+    secrets:
+      ORG_BOOTSTRAP_TOKEN:
+        required: true
+      TEAMS_WEBHOOK:
+        required: false
+
+jobs:
+  guard:
+    name: Guard — must descend from develop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify ancestry
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin develop:refs/remotes/origin/develop 2>/dev/null || true
+          REF="${{ github.sha }}"
+          if git merge-base --is-ancestor "$REF" origin/develop; then
+            echo "✓ commit is reachable from develop"
+          else
+            echo "✗ Release must be cut from a commit merged into develop first."
+            exit 1
+          fi
+
+  qa-gate:
+    name: QA Sign-off Gate
+    runs-on: ubuntu-latest
+    needs: guard
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check qa-approved label
+        env:
+          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+        run: |
+          LABELS=$(gh api /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/labels \
+            --jq '[.[].name] | join(",")' 2>/dev/null || echo "")
+          echo "Labels: $LABELS"
+          if echo "$LABELS" | grep -q "qa-approved"; then
+            echo "✓ qa-approved label present"
+          else
+            echo "✗ This PR requires the 'qa-approved' label before merging to release."
+            echo "  QA team must validate on stage and apply the label."
+            exit 1
+          fi
+
+  changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    needs: guard
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          # Use tag if present, else derive from latest tag + date
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            LAST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            PATCH=$(echo "$LAST" | awk -F. '{print $3+1}')
+            VERSION="${LAST%.*}.$PATCH"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Build release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          echo "Changes since $LAST_TAG:"
+
+          NOTES=$(gh api /repos/${{ github.repository }}/pulls \
+            --jq '.[] | select(.merged_at != null) | "- " + .title + " (#" + (.number|tostring) + ")"' \
+            -f state=closed \
+            -f base=release \
+            --paginate 2>/dev/null | head -50 || echo "- See commit history for changes")
+
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [guard, changelog]
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/release'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+        run: |
+          VERSION="${{ needs.changelog.outputs.version }}"
+          NOTES="${{ needs.changelog.outputs.notes }}"
+
+          # Create tag if doesn't exist
+          git tag "$VERSION" 2>/dev/null || true
+          git push origin "$VERSION" 2>/dev/null || true
+
+          gh release create "$VERSION" \
+            --title "Release $VERSION" \
+            --notes "$NOTES" \
+            --latest \
+            2>/dev/null || \
+          gh release edit "$VERSION" \
+            --title "Release $VERSION" \
+            --notes "$NOTES" \
+            --latest
+
+          echo "✓ GitHub Release $VERSION created"
+
+  notify:
+    name: Notify Teams
+    runs-on: ubuntu-latest
+    needs: [github-release, changelog]
+    if: inputs.notify && always()
+    steps:
+      - name: Post Teams notification
+        if: secrets.TEAMS_WEBHOOK != ''
+        env:
+          WEBHOOK: ${{ secrets.TEAMS_WEBHOOK }}
+        run: |
+          VERSION="${{ needs.changelog.outputs.version }}"
+          REPO="${{ github.repository }}"
+          STATUS="${{ needs.github-release.result }}"
+          COLOR=$([ "$STATUS" == "success" ] && echo "00CC00" || echo "CC0000")
+          EMOJI=$([ "$STATUS" == "success" ] && echo "✅" || echo "❌")
+
+          curl -s -X POST "$WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"@type\": \"MessageCard\",
+              \"@context\": \"https://schema.org/extensions\",
+              \"themeColor\": \"$COLOR\",
+              \"summary\": \"Release $VERSION — $STATUS\",
+              \"sections\": [{
+                \"activityTitle\": \"$EMOJI Release $VERSION\",
+                \"activitySubtitle\": \"$REPO\",
+                \"facts\": [
+                  {\"name\": \"Status\", \"value\": \"$STATUS\"},
+                  {\"name\": \"Version\", \"value\": \"$VERSION\"},
+                  {\"name\": \"Triggered by\", \"value\": \"${{ github.actor }}\"}
+                ]
+              }]
+            }"

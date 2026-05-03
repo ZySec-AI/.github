@@ -1,0 +1,54 @@
+name: enforce branch protection (reusable)
+
+on:
+  workflow_call:
+    secrets:
+      ORG_BOOTSTRAP_TOKEN:
+        required: true
+
+jobs:
+  protect:
+    name: Set branch protection rules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply protection to develop and release
+        env:
+          GH_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          apply_protection() {
+            BRANCH=$1
+            REQUIRED_CHECKS=$2
+
+            # Check branch exists
+            gh api "/repos/$REPO/branches/$BRANCH" --silent 2>/dev/null || return 0
+
+            gh api -X PUT "/repos/$REPO/branches/$BRANCH/protection" \
+              --input - <<EOF
+          {
+            "required_status_checks": {
+              "strict": true,
+              "contexts": $REQUIRED_CHECKS
+            },
+            "enforce_admins": false,
+            "required_pull_request_reviews": {
+              "required_approving_review_count": 1,
+              "dismiss_stale_reviews": true,
+              "require_code_owner_reviews": false
+            },
+            "restrictions": null,
+            "allow_force_pushes": false,
+            "allow_deletions": false,
+            "required_conversation_resolution": true
+          }
+          EOF
+            echo "✓ Protection applied to $BRANCH"
+          }
+
+          # develop: require CI to pass + 1 review
+          apply_protection "develop" '["CI","Quality Gate","Secret Scan (gitleaks)","validate-branch-flow"]'
+
+          # release: also require qa-approved label check
+          apply_protection "release" '["CI","Quality Gate","Secret Scan (gitleaks)","QA Sign-off Gate"]'

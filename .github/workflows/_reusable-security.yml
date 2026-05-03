@@ -1,0 +1,162 @@
+name: security scan (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      python:
+        type: boolean
+        default: false
+      node:
+        type: boolean
+        default: false
+      rust:
+        type: boolean
+        default: false
+      docker:
+        type: boolean
+        default: false
+      image_ref:
+        type: string
+        default: ''
+    secrets:
+      ORG_BOOTSTRAP_TOKEN:
+        required: true
+
+jobs:
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_BOOTSTRAP_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  sast-python:
+    name: SAST — bandit (Python)
+    if: inputs.python
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install bandit
+        run: pip install bandit[toml]
+      - name: Run bandit
+        run: |
+          bandit -r . \
+            --exclude './.venv,./venv,./node_modules,./tests,./test' \
+            -ll \
+            -f sarif \
+            -o bandit.sarif || true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+      - name: Fail on high/critical
+        run: |
+          bandit -r . \
+            --exclude './.venv,./venv,./node_modules,./tests,./test' \
+            -lll \
+            -f txt
+
+  sast-codeql:
+    name: SAST — CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(
+          inputs.python && inputs.node && '["python","javascript"]' ||
+          inputs.python && '["python"]' ||
+          inputs.node && '["javascript"]' ||
+          inputs.rust && '["cpp"]' ||
+          '["python"]'
+        ) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  dep-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0
+          comment-summary-in-pr: true
+
+  trivy-fs:
+    name: Trivy — filesystem scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy (filesystem)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-fs.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  trivy-image:
+    name: Trivy — container image scan
+    if: inputs.docker && inputs.image_ref != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy (image)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ inputs.image_ref }}
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-image.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
