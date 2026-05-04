@@ -74,7 +74,7 @@ jobs:
 
   sast-codeql:
     name: SAST — CodeQL
-    if: inputs.python || inputs.node
+    if: (inputs.python || inputs.node) && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       actions: read
