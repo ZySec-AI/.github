@@ -2,7 +2,7 @@ name: bootstrap new repositories
 
 on:
   schedule:
-    - cron: '0 * * * *'   # hourly (was every 15 min — 4x fewer API calls)
+    - cron: '0 6 * * *'   # daily 06:00 UTC — new repos bootstrapped same-day is sufficient
   workflow_dispatch:
   push:
     branches: [main]
