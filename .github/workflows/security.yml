@@ -1,12 +1,12 @@
 name: Security
 
 on:
-  push:
-    branches: [develop, stage, release]
   pull_request:
     branches: [develop, stage, release]
+  push:
+    branches: [release]       # full scan only when cutting release
   schedule:
-    - cron: '0 3 * * 1'  # weekly Monday 03:00 UTC
+    - cron: '0 3 * * 1'      # weekly Monday 03:00 UTC
   workflow_dispatch:
 
 permissions:
