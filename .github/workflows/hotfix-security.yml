@@ -1,0 +1,45 @@
+name: Security (Hotfix Fast-Path)
+
+on:
+  pull_request:
+    branches: [release]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  fast-security:
+    name: Fast Security Gate (hotfix)
+    if: contains(github.event.pull_request.labels.*.name, 'hotfix')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0
+          comment-summary-in-pr: true
+
+  full-security:
+    name: Full Security Gate (non-hotfix)
+    if: "!contains(github.event.pull_request.labels.*.name, 'hotfix')"
+    uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@main
+    secrets: inherit
+    with:
+      python: ${{ hashFiles('pyproject.toml', 'requirements.txt', 'requirements*.txt', 'setup.py', 'setup.cfg') != '' }}
+      node: ${{ hashFiles('package.json', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json') != '' }}
+      rust: ${{ hashFiles('Cargo.toml') != '' }}
+      docker: ${{ hashFiles('Dockerfile', '*/Dockerfile', '**/Dockerfile') != '' }}

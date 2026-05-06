@@ -1,0 +1,6 @@
+{
+  "name": "ZySec AI — Docs to Wiki Sync",
+  "description": "Auto-syncs docs/ folder to GitHub Wiki on push to main. Converts README.md → Home, rewrites internal links, and generates a sidebar. Standard files: product.md, architecture.md, technology.md, implementation.md.",
+  "iconName": "book",
+  "categories": ["Documentation", "Continuous Integration"]
+}

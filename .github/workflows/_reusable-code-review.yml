@@ -11,12 +11,12 @@ on:
         default: 'CRITICAL'
       model:
         type: string
-        default: 'deepseek/deepseek-v4-pro'
+        default: ''
       base_url:
         type: string
-        default: 'https://openrouter.ai/api'
+        default: ''
     secrets:
-      OPENROUTER_API_KEY:
+      ANTHROPIC_API_KEY:
         required: true
       ORG_ADMIN_TOKEN:
         required: true
@@ -31,6 +31,43 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Resolve LLM config
+        id: llm
+        run: |
+          MODEL="${{ inputs.model }}"
+          BASE_URL="${{ inputs.base_url }}"
+          [ -z "$MODEL" ]    && MODEL="${{ vars.LLM_MODEL }}"
+          [ -z "$BASE_URL" ] && BASE_URL="${{ vars.LLM_BASE_URL }}"
+          echo "model=$MODEL"       >> $GITHUB_OUTPUT
+          echo "base_url=$BASE_URL" >> $GITHUB_OUTPUT
+          echo "Using model: $MODEL @ $BASE_URL"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Cache claude-code + codebase-ai
+        uses: actions/cache@v4
+        id: npm-cache
+        with:
+          path: |
+            ~/.npm
+            /usr/local/lib/node_modules/@anthropic-ai
+            /usr/local/lib/node_modules/codebase-ai
+          key: npm-global-claude-${{ runner.os }}-v1
+          restore-keys: npm-global-claude-${{ runner.os }}-
+
+      - name: Install claude-code + codebase-ai
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: sudo npm install -g @anthropic-ai/claude-code@latest codebase-ai@latest
+
+      - name: Link cached binaries
+        if: steps.npm-cache.outputs.cache-hit == 'true'
+        run: |
+          sudo ln -sf /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude /usr/local/bin/claude 2>/dev/null || true
+          sudo ln -sf /usr/local/lib/node_modules/codebase-ai/bin/codebase /usr/local/bin/codebase-ai 2>/dev/null || true
 
       - name: Determine context
         id: ctx
@@ -57,13 +94,30 @@ jobs:
               ;;
           esac
 
+      - name: Truncate large diffs
+        if: inputs.mode == 'pr-review' || inputs.mode == 'audit'
+        run: |
+          BASE="${{ steps.ctx.outputs.base }}"
+          HEAD="${{ steps.ctx.outputs.head }}"
+          DIFF=$(git diff --no-color "$BASE".."$HEAD" 2>/dev/null || echo "")
+          LINE_COUNT=$(echo "$DIFF" | wc -l)
+          echo "Diff size: $LINE_COUNT lines"
+          if [ "$LINE_COUNT" -gt 500 ]; then
+            echo "$DIFF" | head -500 > /tmp/diff.patch
+            echo "" >> /tmp/diff.patch
+            echo "... [diff truncated at 500 lines — $LINE_COUNT total. Review largest files manually.]" >> /tmp/diff.patch
+            echo "Diff truncated to 500 lines"
+          else
+            echo "$DIFF" > /tmp/diff.patch
+          fi
+
       - name: Run code reviewer
         uses: ZySec-AI/code-reviewer@develop
         with:
           mode: ${{ inputs.mode }}
-          zai-api-key: ${{ secrets.OPENROUTER_API_KEY }}
-          zai-base-url: ${{ inputs.base_url }}
-          model: ${{ inputs.model }}
+          zai-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          zai-base-url: ${{ steps.llm.outputs.base_url }}
+          model: ${{ steps.llm.outputs.model }}
           github-token: ${{ secrets.ORG_ADMIN_TOKEN }}
           base-sha: ${{ steps.ctx.outputs.base }}
           head-sha: ${{ steps.ctx.outputs.head }}

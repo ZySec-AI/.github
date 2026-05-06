@@ -2,7 +2,7 @@ name: bootstrap new repositories
 
 on:
   schedule:
-    - cron: '0 * * * *'   # hourly (was every 15 min — 4x fewer API calls)
+    - cron: '0 6 * * *'   # daily 06:00 UTC — new repos bootstrapped same-day is sufficient
   workflow_dispatch:
   push:
     branches: [main]
@@ -46,7 +46,6 @@ jobs:
           # bootstrap installs missing ones — never overwrites existing.
           declare -A WORKFLOWS=(
             # AI-assisted review & triage
-            ["code-review.yml"]="AI code audit on develop push"
             ["code-review-pr.yml"]="AI PR review on open/sync"
             ["issue-triage.yml"]="AI issue triage on opened/edited"
             ["issue-auto-fix.yml"]="AI auto-fix on bot-fix-please label"
@@ -59,10 +58,7 @@ jobs:
             # Release management
             ["release.yml"]="QA gate + GitHub Release + Teams notification"
             # Sprint process
-            ["code-freeze.yml"]="code freeze reminders Thu/Fri"
             ["pr-standards.yml"]="PR description + label + milestone validation"
-            ["stale.yml"]="stale PR (2d) and issue (7d) notifier"
-            ["sprint-retro.yml"]="auto sprint retro issue every Friday"
             # Developer education
             ["merge-comment.yml"]="post controls summary + devops-practices links on PR open"
           )

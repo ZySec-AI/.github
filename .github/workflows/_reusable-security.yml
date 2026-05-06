@@ -21,6 +21,8 @@ on:
     secrets:
       ORG_ADMIN_TOKEN:
         required: true
+      TRIVY_TEAM_WEBHOOK:
+        required: false
 
 jobs:
   secret-scan:
@@ -74,7 +76,7 @@ jobs:
 
   sast-codeql:
     name: SAST — CodeQL
-    if: inputs.python || inputs.node
+    if: (inputs.python || inputs.node) && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -83,12 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ${{ fromJSON(
-          inputs.python && inputs.node && '["python","javascript"]' ||
-          inputs.python && '["python"]' ||
-          inputs.node && '["javascript"]' ||
-          '[]'
-        ) }}
+        language: ${{ fromJSON(inputs.python && inputs.node && '["python","javascript"]' || inputs.python && '["python"]' || inputs.node && '["javascript"]' || '[]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
@@ -124,6 +121,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy (filesystem)
+        env:
+          TRIVY_TOKEN: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
@@ -148,6 +147,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy (image)
+        env:
+          TRIVY_TOKEN: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ inputs.image_ref }}
