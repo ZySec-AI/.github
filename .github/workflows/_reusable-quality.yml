@@ -26,9 +26,35 @@ on:
         required: false
 
 jobs:
+  detect:
+    name: Detect project types
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.check.outputs.python }}
+      node: ${{ steps.check.outputs.node }}
+      rust: ${{ steps.check.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for project files
+        id: check
+        run: |
+          python=0
+          node=0
+          rust=0
+
+          [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ] && python=1
+          [ -f "package.json" ] && node=1
+          [ -f "Cargo.toml" ] && rust=1
+
+          echo "python=$python" >> $GITHUB_OUTPUT
+          echo "node=$node" >> $GITHUB_OUTPUT
+          echo "rust=$rust" >> $GITHUB_OUTPUT
+          echo "Detected: python=$python node=$node rust=$rust"
+
   python-quality:
     name: Python — lint / type / coverage
-    if: inputs.python
+    needs: detect
+    if: needs.detect.outputs.python == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -80,7 +106,8 @@ jobs:
 
   node-quality:
     name: Node — lint / type / build
-    if: inputs.node
+    needs: detect
+    if: needs.detect.outputs.node == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -121,7 +148,8 @@ jobs:
 
   rust-quality:
     name: Rust — fmt / clippy / test
-    if: inputs.rust
+    needs: detect
+    if: needs.detect.outputs.rust == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

@@ -14,8 +14,3 @@ jobs:
     uses: ZySec-AI/.github/.github/workflows/_reusable-quality.yml@main
     secrets:
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
-    with:
-      python: ${{ hashFiles('pyproject.toml', 'requirements.txt', 'requirements*.txt', 'setup.py', 'setup.cfg') != '' }}
-      node: ${{ hashFiles('package.json', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json') != '' }}
-      rust: ${{ hashFiles('Cargo.toml') != '' }}
-      coverage_threshold: 80

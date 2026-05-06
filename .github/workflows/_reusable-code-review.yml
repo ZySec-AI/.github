@@ -112,10 +112,11 @@ jobs:
           fi
 
       - name: Run code reviewer
+        env:
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}
         uses: ZySec-AI/code-reviewer@develop
         with:
           mode: ${{ inputs.mode }}
-          zai-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           zai-base-url: ${{ steps.llm.outputs.base_url }}
           model: ${{ steps.llm.outputs.model }}
           github-token: ${{ secrets.ORG_ADMIN_TOKEN }}
