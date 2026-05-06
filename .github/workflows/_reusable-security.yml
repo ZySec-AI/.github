@@ -21,6 +21,8 @@ on:
     secrets:
       ORG_ADMIN_TOKEN:
         required: true
+      TRIVY_TEAM_WEBHOOK:
+        required: false
 
 jobs:
   secret-scan:
@@ -124,6 +126,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy (filesystem)
+        env:
+          TRIVY_TOKEN: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
@@ -148,6 +152,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy (image)
+        env:
+          TRIVY_TOKEN: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ inputs.image_ref }}

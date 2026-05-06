@@ -140,9 +140,10 @@ jobs:
     if: inputs.notify && always()
     steps:
       - name: Post Teams notification
-        if: secrets.TEAMS_WEBHOOK != ''
         env:
+          HAS_WEBHOOK: ${{ secrets.TEAMS_WEBHOOK != '' }}
           WEBHOOK: ${{ secrets.TEAMS_WEBHOOK }}
+        if: env.HAS_WEBHOOK == 'true'
         run: |
           VERSION="${{ needs.changelog.outputs.version }}"
           REPO="${{ github.repository }}"
