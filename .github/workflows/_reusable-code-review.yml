@@ -16,14 +16,8 @@ on:
         type: string
         default: ''
     secrets:
-      OPENROUTER_API_KEY:
-        required: false
       ANTHROPIC_API_KEY:
-        required: false
-      OPENAI_API_KEY:
-        required: false
-      ZAI_API_KEY:
-        required: false
+        required: true
       ORG_ADMIN_TOKEN:
         required: true
 
@@ -121,7 +115,7 @@ jobs:
         uses: ZySec-AI/code-reviewer@develop
         with:
           mode: ${{ inputs.mode }}
-          zai-api-key: ${{ secrets.OPENROUTER_API_KEY || secrets.ANTHROPIC_API_KEY || secrets.OPENAI_API_KEY || secrets.ZAI_API_KEY }}
+          zai-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           zai-base-url: ${{ steps.llm.outputs.base_url }}
           model: ${{ steps.llm.outputs.model }}
           github-token: ${{ secrets.ORG_ADMIN_TOKEN }}

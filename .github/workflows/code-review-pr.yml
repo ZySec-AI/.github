@@ -50,7 +50,9 @@ jobs:
       !contains(github.event.pull_request.labels.*.name, 'bot-skip') &&
       github.event.pull_request.draft == false
     uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
-    secrets: inherit
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: pr-review
       fail_on: NEVER

@@ -22,7 +22,7 @@ on:
         type: string
         default: '20'
     secrets:
-      GIT_TOKEN:
+      ORG_ADMIN_TOKEN:
         required: false
 
 jobs:
@@ -41,9 +41,11 @@ jobs:
           python-version: ${{ inputs.python_version }}
 
       - name: Configure git for private deps
-        if: secrets.GIT_TOKEN != ''
+        env:
+          HAS_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' }}
+        if: env.HAS_TOKEN == 'true'
         run: |
-          git config --global url."https://${{ secrets.GIT_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://${{ secrets.ORG_ADMIN_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
         run: uv sync --frozen
