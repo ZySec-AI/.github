@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   review:
-    uses: ZySec-AI/code-reviewer@bugfix/secrets-to-env-vars
+    uses: ZySec-AI/code-reviewer@main
     secrets: inherit
     with:
       mode: ${{ inputs.mode }}
