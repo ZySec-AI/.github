@@ -20,6 +20,15 @@ on:
         required: true
       ORG_ADMIN_TOKEN:
         required: true
+    outputs:
+      result:
+        description: "Result of the code review"
+        value: ${{ jobs.agent.outputs.result }}
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
   agent:
@@ -119,6 +128,7 @@ jobs:
           mode: ${{ inputs.mode }}
           zai-base-url: ${{ steps.llm.outputs.base_url }}
           model: ${{ steps.llm.outputs.model }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           github-token: ${{ secrets.ORG_ADMIN_TOKEN }}
           base-sha: ${{ steps.ctx.outputs.base }}
           head-sha: ${{ steps.ctx.outputs.head }}
