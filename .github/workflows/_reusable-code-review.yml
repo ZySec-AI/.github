@@ -31,11 +31,11 @@ permissions:
 jobs:
   review:
     uses: ZySec-AI/code-reviewer@main
-    secrets: inherit
-    with:
-      mode: ${{ inputs.mode }}
+    secrets:
       anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
       anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
       llm-model: ${{ secrets.LLM_MODEL }}
       github-token: ${{ secrets.ORG_ADMIN_TOKEN }}
+    with:
+      mode: ${{ inputs.mode }}
       fail_on: ${{ inputs.fail_on }}
