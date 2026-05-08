@@ -19,12 +19,12 @@ jobs:
     if: |
       !contains(github.event.pull_request.labels.*.name, 'bot-skip') &&
       github.event.pull_request.draft == false
-    uses: ./.github/workflows/_reusable-code-review.yml@main
+    uses: ./.github/workflows/_reusable-code-review.yml
     secrets:
-      anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
-      anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-      llm-model: ${{ secrets.LLM_MODEL }}
-      org-admin-token: ${{ secrets.ORG_ADMIN_TOKEN }}
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: pr-review
       fail_on: NEVER
