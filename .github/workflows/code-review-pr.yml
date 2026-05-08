@@ -19,7 +19,7 @@ jobs:
     if: |
       !contains(github.event.pull_request.labels.*.name, 'bot-skip') &&
       github.event.pull_request.draft == false
-    uses: .github/workflows/_reusable-code-review.yml
+    uses: .github/workflows/_reusable-code-review.yml@main
     secrets:
       anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
       anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
