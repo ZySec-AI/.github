@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   review:
-    uses: ZySec-AI/code-reviewer@main
+    uses: ZySec-AI/code-reviewer/.github/workflows/reusable.yml@main
     secrets:
       anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
       anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
