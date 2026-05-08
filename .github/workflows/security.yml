@@ -1,12 +1,12 @@
 name: Security
 
 on:
+  push:
+    branches: [develop, stage, release]
   pull_request:
     branches: [develop, stage, release]
-  push:
-    branches: [release]       # full scan only when cutting release
   schedule:
-    - cron: '0 3 * * 1'      # weekly Monday 03:00 UTC
+    - cron: '0 3 * * 1'  # weekly Monday 03:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -14,12 +14,59 @@ permissions:
   security-events: write
   pull-requests: write
 
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # The reusable workflow at ZySec-AI/.github declares ORG_ADMIN_TOKEN as
+  # `required: true`. With `secrets: inherit`, missing the secret produces
+  # a workflow `startup_failure` (no jobs run, no diagnostics). Detect the
+  # secret's presence here and gate the scan on it — graceful skip with a
+  # GitHub Actions warning instead of a hard failure.
+  #
+  # `hashFiles` is only valid in `jobs.*.steps.*` contexts — using it directly
+  # in a workflow_call `with:` block silently evaluates to '' (the bootstrap
+  # pattern was a bug). Run hashFiles in a real step here. `**/` patterns
+  # cover nested files (monorepo subdirs, Cargo workspaces). Closes #8 #9.
+  detect:
+    name: detect language stacks
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.check.outputs.python }}
+      node: ${{ steps.check.outputs.node }}
+      rust: ${{ steps.check.outputs.rust }}
+      docker: ${{ steps.check.outputs.docker }}
+      has_admin_token: ${{ steps.check.outputs.has_admin_token }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        env:
+          PY_FILES: ${{ hashFiles('**/pyproject.toml', '**/requirements*.txt', '**/setup.py', '**/setup.cfg') }}
+          NODE_FILES: ${{ hashFiles('**/package.json', '**/pnpm-lock.yaml', '**/yarn.lock', '**/package-lock.json') }}
+          RUST_FILES: ${{ hashFiles('**/Cargo.toml') }}
+          DOCKER_FILES: ${{ hashFiles('**/Dockerfile') }}
+          ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          [ -n "$PY_FILES" ]     && echo "python=true"   >> "$GITHUB_OUTPUT" || echo "python=false"   >> "$GITHUB_OUTPUT"
+          [ -n "$NODE_FILES" ]   && echo "node=true"     >> "$GITHUB_OUTPUT" || echo "node=false"     >> "$GITHUB_OUTPUT"
+          [ -n "$RUST_FILES" ]   && echo "rust=true"     >> "$GITHUB_OUTPUT" || echo "rust=false"     >> "$GITHUB_OUTPUT"
+          [ -n "$DOCKER_FILES" ] && echo "docker=true"   >> "$GITHUB_OUTPUT" || echo "docker=false"   >> "$GITHUB_OUTPUT"
+          if [ -n "$ADMIN_TOKEN" ]; then
+            echo "has_admin_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_admin_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ORG_ADMIN_TOKEN secret is not configured — security scan will be skipped. Configure at the org level to enable."
+          fi
+          echo "Detected: python=${PY_FILES:+yes} node=${NODE_FILES:+yes} rust=${RUST_FILES:+yes} docker=${DOCKER_FILES:+yes} admin_token=${ADMIN_TOKEN:+yes}"
+
   scan:
+    needs: detect
+    if: needs.detect.outputs.has_admin_token == 'true'
     uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@main
     secrets: inherit
     with:
-      python: ${{ hashFiles('pyproject.toml', 'requirements.txt', 'requirements*.txt', 'setup.py', 'setup.cfg') != '' }}
-      node: ${{ hashFiles('package.json', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json') != '' }}
-      rust: ${{ hashFiles('Cargo.toml') != '' }}
-      docker: ${{ hashFiles('Dockerfile', '*/Dockerfile', '**/Dockerfile') != '' }}
+      python: ${{ needs.detect.outputs.python == 'true' }}
+      node: ${{ needs.detect.outputs.node == 'true' }}
+      rust: ${{ needs.detect.outputs.rust == 'true' }}
+      docker: ${{ needs.detect.outputs.docker == 'true' }}

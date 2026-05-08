@@ -9,11 +9,85 @@ permissions:
   issues: write
   pull-requests: write
 
+# Re-applying `bot-fix-please` should not spawn a second concurrent
+# auto-fix attempt on the same issue.
+concurrency:
+  group: issue-fix-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
-  fix:
+  # Gate the auto-fix workflow on the actor having a write-class permission
+  # on the repo. By default, GitHub triage role can apply labels — that's a
+  # weak boundary for a workflow that runs an LLM with `contents: write` and
+  # `ORG_ADMIN_TOKEN` in env. Anyone below `write` (triage / read / outside
+  # contributor) cannot drive the bot.
+  authorize:
     if: github.event.label.name == 'bot-fix-please'
-    uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
-    secrets: inherit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+    steps:
+      - name: Resolve actor permission and ORG_ADMIN_TOKEN presence
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+          ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          ACTOR: ${{ github.event.sender.login }}
+        run: |
+          set -eu
+
+          # First gate: ORG_ADMIN_TOKEN must be configured. Without it, the
+          # reusable workflow startup-fails (it's required: true upstream).
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ORG_ADMIN_TOKEN secret is not configured — auto-fix will be skipped. Configure at the org level to enable."
+            gh issue comment "${{ github.event.issue.number }}" \
+              -R "${{ github.repository }}" \
+              --body "🤖 Auto-fix is not available — ORG_ADMIN_TOKEN secret is not configured for this repo." 2>/dev/null || true
+            gh issue edit "${{ github.event.issue.number }}" \
+              -R "${{ github.repository }}" \
+              --remove-label bot-fix-please 2>/dev/null || true
+            exit 0
+          fi
+
+          # Second gate: actor must have write-class permission. The default
+          # GitHub triage role can apply labels; that's too weak a boundary
+          # for a workflow that runs an LLM with `contents: write` and
+          # `ORG_ADMIN_TOKEN` in env.
+          PERM=$(gh api "/repos/${{ github.repository }}/collaborators/$ACTOR/permission" \
+            --jq '.permission' 2>/dev/null || echo "none")
+          echo "Actor: $ACTOR — permission: $PERM"
+          case "$PERM" in
+            admin|maintain|write)
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::Refusing auto-fix: actor '$ACTOR' has '$PERM' permission, requires write or higher."
+              # Drop the trigger label and post a comment so the user knows why.
+              gh issue edit "${{ github.event.issue.number }}" \
+                -R "${{ github.repository }}" \
+                --remove-label bot-fix-please 2>/dev/null || true
+              gh issue comment "${{ github.event.issue.number }}" \
+                -R "${{ github.repository }}" \
+                --body "🤖 Cannot run auto-fix for @$ACTOR — only repo collaborators with write or higher can trigger \`bot-fix-please\`. Ask a maintainer to apply the label." 2>/dev/null || true
+              ;;
+          esac
+
+  # `timeout-minutes` cannot live on a `uses:` job; the reusable workflow
+  # owns its own timeout. The auto-fix path is the longest-running mode
+  # (commit + tests + push + PR), so the reusable should give it ~30 min.
+  fix:
+    needs: authorize
+    if: needs.authorize.outputs.ok == 'true'
+    uses: ./.github/workflows/_reusable-code-review.yml
+    secrets:
+      anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
+      anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+      llm-model: ${{ secrets.LLM_MODEL }}
+      org-admin-token: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: issue-fix
-      fail_on: NEVER
+      fail-on: NEVER

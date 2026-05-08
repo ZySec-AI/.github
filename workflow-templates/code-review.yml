@@ -1,8 +1,8 @@
-name: Code Review (auto on develop)
+name: Code Review (auto on develop/stage)
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, stage]
   workflow_dispatch:
 
 permissions:
@@ -10,10 +10,53 @@ permissions:
   issues: write
   pull-requests: write
 
+# Cancel any in-flight audit for the same branch when a newer push lands.
+# Audit runs are LLM-billed and the dedupe-via-`gh issue list` has a
+# TOCTOU between concurrent runs — concurrent runs are both wasteful
+# and a duplicate-issue source.
+concurrency:
+  group: code-review-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Detect ORG_ADMIN_TOKEN presence first — the upstream reusable workflow
+  # marks it `required: true`, and missing it produces a `startup_failure`
+  # with no diagnostics. Gate the actual review job on its presence so the
+  # workflow degrades gracefully (skipped + warning) on repos that haven't
+  # finished bootstrap.
+  authorize:
+    if: github.actor != 'venkycs[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      has_admin_token: ${{ steps.check.outputs.has_admin_token }}
+    steps:
+      - id: check
+        env:
+          ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          if [ -n "$ADMIN_TOKEN" ]; then
+            echo "has_admin_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_admin_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ORG_ADMIN_TOKEN secret is not configured — audit will be skipped. Configure at the org level to enable."
+          fi
+
+  # `timeout-minutes` is not allowed on jobs that `uses:` a reusable workflow.
+  # The reusable owns its own timeout; API_TIMEOUT_MS in entrypoint.sh caps
+  # the LLM call.
   review:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
-    secrets: inherit
+    needs: authorize
+    if: needs.authorize.outputs.has_admin_token == 'true'
+    uses: ./.github/workflows/_reusable-code-review.yml
+    secrets:
+      anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
+      anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+      llm-model: ${{ secrets.LLM_MODEL }}
+      org-admin-token: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: audit
-      fail_on: CRITICAL
+      base-sha: ${{ github.event.before }}
+      head-sha: ${{ github.sha }}
+      fail-on: CRITICAL

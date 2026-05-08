@@ -2,19 +2,55 @@ name: Issue Triage
 
 on:
   issues:
-    types: [opened, reopened]
+    types: [opened, edited, reopened]
 
 permissions:
   contents: read
   issues: write
   pull-requests: write
 
+# A flurry of edits on a single issue would otherwise spawn parallel
+# triage runs that race to apply labels.
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
-  triage:
+  # Detect ORG_ADMIN_TOKEN presence first — the upstream reusable workflow
+  # marks it `required: true`. Gate the triage on it so the workflow
+  # degrades gracefully (skipped + warning) when the secret is missing.
+  authorize:
     if: |
       !contains(github.event.issue.labels.*.name, 'bot-skip') &&
       !contains(github.event.issue.labels.*.name, 'bot-reviewed')
-    uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
-    secrets: inherit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      has_admin_token: ${{ steps.check.outputs.has_admin_token }}
+    steps:
+      - id: check
+        env:
+          ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          if [ -n "$ADMIN_TOKEN" ]; then
+            echo "has_admin_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_admin_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ORG_ADMIN_TOKEN secret is not configured — issue triage will be skipped. Configure at the org level to enable."
+          fi
+
+  # `timeout-minutes` cannot live on a `uses:` job; the reusable workflow
+  # owns its own timeout.
+  triage:
+    needs: authorize
+    if: needs.authorize.outputs.has_admin_token == 'true'
+    # Pinned — see code-review.yml for rationale.
+    uses: ./.github/workflows/_reusable-code-review.yml
+    secrets:
+      anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL }}
+      anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+      llm-model: ${{ secrets.LLM_MODEL }}
+      org-admin-token: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: issue-triage
