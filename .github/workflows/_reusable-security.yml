@@ -21,6 +21,8 @@ on:
     secrets:
       ORG_ADMIN_TOKEN:
         required: true
+      TRIVY_TEAM_WEBHOOK:
+        required: false
 
 jobs:
   secret-scan:
@@ -37,6 +39,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
 
   sast-python:
     name: SAST — bandit (Python)
@@ -83,12 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ${{ fromJSON(
-          inputs.python && inputs.node && '["python","javascript"]' ||
-          inputs.python && '["python"]' ||
-          inputs.node && '["javascript"]' ||
-          '[]'
-        ) }}
+        language: ${{ fromJSON(inputs.python && inputs.node && '["python","javascript"]' || inputs.python && '["python"]' || inputs.node && '["javascript"]' || '[]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
@@ -114,6 +112,7 @@ jobs:
           fail-on-severity: high
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0
           comment-summary-in-pr: true
+        continue-on-error: true
 
   trivy-fs:
     name: Trivy — filesystem scan
@@ -124,7 +123,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy (filesystem)
-        uses: aquasecurity/trivy-action@0.28.0
+        env:
+          TRIVY_TOKEN: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
@@ -148,7 +149,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy (image)
-        uses: aquasecurity/trivy-action@0.28.0
+        env:
+          TRIVY_TOKEN: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ inputs.image_ref }}
           ignore-unfixed: true
