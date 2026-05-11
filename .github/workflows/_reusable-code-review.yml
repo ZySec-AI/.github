@@ -9,17 +9,15 @@ on:
       fail_on:
         type: string
         default: 'CRITICAL'
-      model:
-        type: string
-        default: ''
-      base_url:
-        type: string
-        default: ''
     secrets:
-      ANTHROPIC_API_KEY:
-        required: true
+      LLM_PROVIDER:
+        required: false   # MINIMAX | ZAI | ANTHROPIC — defaults to MINIMAX
+      LLM_API_KEY:
+        required: true    # API key for the chosen provider
+      LLM_MODEL:
+        required: false   # override model; provider default used if empty
       ORG_ADMIN_TOKEN:
-        required: true
+        required: false   # gh CLI token; falls back to GITHUB_TOKEN if absent
 
 jobs:
   agent:
@@ -32,16 +30,35 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve LLM config
-        id: llm
+      - name: Resolve provider config
+        id: provider
+        env:
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_MODEL_OVERRIDE: ${{ secrets.LLM_MODEL }}
         run: |
-          MODEL="${{ inputs.model }}"
-          BASE_URL="${{ inputs.base_url }}"
-          [ -z "$MODEL" ]    && MODEL="${{ vars.LLM_MODEL }}"
-          [ -z "$BASE_URL" ] && BASE_URL="${{ vars.LLM_BASE_URL }}"
-          echo "model=$MODEL"       >> $GITHUB_OUTPUT
+          PROVIDER=$(echo "${LLM_PROVIDER:-MINIMAX}" | tr '[:lower:]' '[:upper:]' | tr -d ' \t\r\n')
+          case "$PROVIDER" in
+            MINIMAX)
+              BASE_URL="https://api.minimax.io/anthropic"
+              MODEL_DEFAULT="MiniMax-M2.7"
+              ;;
+            ZAI)
+              BASE_URL="https://api.z.ai/api/anthropic"
+              MODEL_DEFAULT="GLM-5.1"
+              ;;
+            ANTHROPIC)
+              BASE_URL="https://api.anthropic.com"
+              MODEL_DEFAULT="claude-sonnet-4-6"
+              ;;
+            *)
+              echo "❌ Unknown LLM_PROVIDER: '$PROVIDER' (expected MINIMAX | ZAI | ANTHROPIC)" >&2
+              exit 1
+              ;;
+          esac
+          MODEL="${LLM_MODEL_OVERRIDE:-$MODEL_DEFAULT}"
           echo "base_url=$BASE_URL" >> $GITHUB_OUTPUT
-          echo "Using model: $MODEL @ $BASE_URL"
+          echo "model=$MODEL"       >> $GITHUB_OUTPUT
+          echo "✓ Provider: $PROVIDER | Model: $MODEL @ $BASE_URL"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -112,14 +129,13 @@ jobs:
           fi
 
       - name: Run code reviewer
-        env:
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}
         uses: ZySec-AI/code-reviewer@develop
         with:
           mode: ${{ inputs.mode }}
-          zai-base-url: ${{ steps.llm.outputs.base_url }}
-          model: ${{ steps.llm.outputs.model }}
-          github-token: ${{ secrets.ORG_ADMIN_TOKEN }}
+          anthropic-base-url: ${{ steps.provider.outputs.base_url }}
+          anthropic-auth-token: ${{ secrets.LLM_API_KEY }}
+          llm-model: ${{ steps.provider.outputs.model }}
+          github-token: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
           base-sha: ${{ steps.ctx.outputs.base }}
           head-sha: ${{ steps.ctx.outputs.head }}
           pr-number: ${{ steps.ctx.outputs.pr_number }}
