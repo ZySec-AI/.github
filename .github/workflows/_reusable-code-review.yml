@@ -39,6 +39,8 @@ jobs:
           BASE_URL="${{ inputs.base_url }}"
           [ -z "$MODEL" ]    && MODEL="${{ vars.LLM_MODEL }}"
           [ -z "$BASE_URL" ] && BASE_URL="${{ vars.LLM_BASE_URL }}"
+          [ -z "$MODEL" ]    && MODEL="MiniMax-M2.7"
+          [ -z "$BASE_URL" ] && BASE_URL="https://api.minimax.io/anthropic"
           echo "model=$MODEL"       >> $GITHUB_OUTPUT
           echo "base_url=$BASE_URL" >> $GITHUB_OUTPUT
           echo "Using model: $MODEL @ $BASE_URL"
@@ -112,12 +114,11 @@ jobs:
           fi
 
       - name: Run code reviewer
-        env:
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}
         uses: ZySec-AI/code-reviewer@develop
         with:
           mode: ${{ inputs.mode }}
-          zai-base-url: ${{ steps.llm.outputs.base_url }}
+          minimax-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          base-url: ${{ steps.llm.outputs.base_url }}
           model: ${{ steps.llm.outputs.model }}
           github-token: ${{ secrets.ORG_ADMIN_TOKEN }}
           base-sha: ${{ steps.ctx.outputs.base }}
