@@ -1,3 +1,17 @@
+# =============================================================================
+# WORKFLOW: AI Issue Auto-Fix
+# PURPOSE:  When 'bot-fix-please' OR 'auto-fixable' label is applied to an
+#           issue, the LLM attempts an automated fix and opens a PR.
+# TRIGGERS: issues (labeled) — fires on bot-fix-please (manual) or
+#           auto-fixable (set automatically by issue-triage.yml)
+# SECRETS:  ANTHROPIC_API_KEY (mapped to LLM_API_KEY in reusable)
+# WHY auto-fixable trigger: issue-triage already detects simple fixable issues
+#   and labels them. Without this trigger, a human had to manually re-label
+#   bot-fix-please — redundant step that broke the automation loop.
+# HOW TO USE: Apply 'bot-fix-please' label, or let issue-triage auto-label.
+# SKIP:     Apply 'bot-skip' to the issue before triage runs to suppress.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: Issue Auto-Fix
 
 on:
@@ -11,10 +25,13 @@ permissions:
 
 jobs:
   fix:
-    if: github.event.label.name == 'bot-fix-please'
+    # Fires on manual bot-fix-please OR triage-detected auto-fixable
+    if: |
+      github.event.label.name == 'bot-fix-please' ||
+      github.event.label.name == 'auto-fixable'
     uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
     secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      LLM_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: issue-fix
