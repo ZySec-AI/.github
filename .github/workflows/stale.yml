@@ -1,3 +1,13 @@
+# =============================================================================
+# WORKFLOW: Stale PR & Issue Notifier
+# PURPOSE:  Marks PRs stale after 14 days inactivity, closes after 7 more days
+# TRIGGERS: schedule (weekdays 04:00 UTC), workflow_dispatch
+# WHY 14 days: original 2-day stale / 5-day close was so aggressive that PRs
+#   opened Friday could be auto-closed before a cross-timezone reviewer had
+#   a full working day to look at them. 14/7 is more appropriate for a
+#   security product org with code review SLAs measured in hours, not minutes.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: Stale PR & Issue Notifier
 
 on:
@@ -14,21 +24,24 @@ jobs:
     name: Mark stale items
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@v9
+      - uses: actions/stale@5bef64f19d7facfb25b37b414482c7164d639639  # v9.1.0
         with:
           repo-token: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
-          # PRs open > 2 days without review = stale (per <24hr review target)
-          days-before-pr-stale: 2
-          days-before-pr-close: 5
+
+          # PRs — stale after 14 days, close after 7 more
+          # FIX: was 2 days stale / 5 days close — too aggressive for cross-TZ teams
+          days-before-pr-stale: 14
+          days-before-pr-close: 7
           stale-pr-label: 'needs-review'
           stale-pr-message: |
-            ⏰ This PR has had no activity for 2 days.
-            Per ZySec AI standards, PRs should be reviewed within 24 hours.
-            Please review or request a reviewer.
+            ⏰ This PR has had no activity for 14 days.
+            It will be closed in 7 more days unless updated or labelled `no-stale`.
+            If this is blocked waiting on review, post in #pr-reviews on Slack.
           close-pr-message: |
-            This PR has been closed due to 5 days of inactivity.
-            Re-open if still relevant.
-          # Issues stale after 7 days
+            This PR has been closed due to 21 days of inactivity.
+            Re-open and push a new commit to restart the review process.
+
+          # Issues — stale after 7 days, close after 14 more
           days-before-issue-stale: 7
           days-before-issue-close: 14
           stale-issue-label: 'needs-info'
@@ -36,6 +49,11 @@ jobs:
             ⏰ This issue has had no activity for 7 days.
             Please provide an update or close if resolved.
           close-issue-message: |
-            This issue has been closed due to 14 days of inactivity.
-          exempt-pr-labels: 'bot-skip,hotfix,type:docs'
-          exempt-issue-labels: 'bot-skip,severity:critical,severity:high'
+            This issue has been closed due to 21 days of inactivity.
+            Re-open if still relevant.
+
+          # Never auto-close these
+          exempt-pr-labels: 'bot-skip,hotfix,type:docs,no-stale,qa-approved'
+          exempt-issue-labels: 'bot-skip,severity:critical,severity:high,no-stale'
+          operations-per-run: 100
+          ascending: true
