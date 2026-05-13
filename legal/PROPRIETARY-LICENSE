@@ -1,0 +1,35 @@
+Copyright (c) 2024-2026 ZySec AI. All rights reserved.
+
+PROPRIETARY AND CONFIDENTIAL
+
+This software and all associated documentation, source code, object code,
+and related materials ("Software") are the exclusive property of ZySec AI
+and its licensors.
+
+RESTRICTIONS:
+  - You may not use, copy, modify, merge, publish, distribute, sublicense,
+    sell, or transfer this Software or any portion thereof without the
+    express prior written permission of ZySec AI.
+  - You may not reverse-engineer, decompile, disassemble, or otherwise
+    attempt to derive the source code of this Software.
+  - You may not remove or alter any proprietary notices, labels, or marks
+    on the Software.
+
+AUTHORIZED USE:
+  Access to this repository is granted solely to employees, contractors,
+  and partners of ZySec AI who have executed a written confidentiality
+  agreement. Any other access or use is strictly prohibited.
+
+PUBLIC DISTRIBUTION:
+  If this Software is made publicly available under an open-source license,
+  the terms of that license (as stated in the accompanying LICENSE file)
+  supersede this notice for that specific release. Such public releases do
+  not grant commercial use rights to third parties beyond what the stated
+  open-source license explicitly permits.
+
+DISCLAIMER:
+  THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+  ZYSEC AI SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING FROM THE USE
+  OF THIS SOFTWARE.
+
+For licensing inquiries: legal@zysec.ai
