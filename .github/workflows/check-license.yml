@@ -24,14 +24,6 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-
-          # ZySec AI software is PROPRIETARY — all rights reserved.
-          # Private repos: no external distribution rights.
-          # If a repo is ever made public, a separate commercial-friendly
-          # open-source license (e.g. Apache 2.0) is applied explicitly.
-          #
-          # Block copyleft licenses that could force source disclosure or
-          # restrict commercial use of any code or dependency we ship:
           PATTERNS=(
             "GNU General Public License"
             "GNU Affero General Public License"
@@ -44,89 +36,23 @@ jobs:
             "Elastic License"
             "PolyForm"
           )
-
           DIFF=$(git diff --no-color "$BASE_SHA".."$HEAD_SHA" -- \
             '*.txt' '*.md' 'LICENSE*' 'LICENCE*' 'COPYING*' 'NOTICE*' \
             'package.json' 'pyproject.toml' 'Cargo.toml' 'go.mod' \
             2>/dev/null || echo "")
-
           FOUND=""
           for PATTERN in "${PATTERNS[@]}"; do
             if echo "$DIFF" | grep -qi "$PATTERN"; then
-              FOUND="$FOUND
-- \`$PATTERN\`"
+              FOUND="$FOUND\n- \`$PATTERN\`"
             fi
           done
-
           if [ -n "$FOUND" ]; then
             echo "::error::Incompatible license text detected in diff"
-            printf "Matched patterns:%b
-" "$FOUND"
+            printf "Matched patterns:%b\n" "$FOUND"
             echo ""
             echo "ZySec AI software is proprietary and commercially distributed."
-            echo "The following license types are incompatible:"
-            echo "  - Copyleft (GPL/AGPL/LGPL): require shipping source code"
-            echo "  - Source-available but non-commercial (SSPL, BSL, Elastic, PolyForm)"
-            echo "  - Commons Clause: restricts selling/hosting"
-            echo ""
             echo "Use only: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0"
-            echo ""
-            echo "If this is a false positive (e.g. a doc referencing a 3rd-party tool),"
-            echo "add the 'bot-skip' label to bypass."
+            echo "If false positive, add the 'bot-skip' label to bypass."
             exit 1
           fi
-
-          echo "✓ No incompatible license text detected"
-
-      - name: Check no MIT/Apache LICENSE file added to proprietary repos
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # Warn if a LICENSE file is being added/modified — needs legal review
-          CHANGED_LICENSE=$(git diff --name-only "$BASE_SHA".."$HEAD_SHA" 2>/dev/null \
-            | grep -iE "^LICENSE|^LICENCE|^COPYING" || echo "")
-
-          if [ -n "$CHANGED_LICENSE" ]; then
-            echo "::warning::LICENSE file modified: $CHANGED_LICENSE"
-            echo "ZySec AI repos are proprietary. LICENSE file changes require legal review."
-            echo "Ensure this repo's LICENSE matches the intended distribution model:"
-            echo "  - Private/internal: use PROPRIETARY (no open-source license)"
-            echo "  - Public/open-source: use Apache-2.0 (allows commercial use by others)"
-            echo "  - Do NOT use MIT on proprietary repos (grants free commercial use to anyone)"
-          fi
-
-      - name: Post comment on failure
-        if: failure()
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
-        with:
-          github-token: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
-          script: |
-            const { owner, repo } = context.repo;
-            const issue_number = context.payload.pull_request.number;
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
-            const existing = comments.find(c => c.body.includes('<!-- zysec-license-check -->'));
-            const body = `<!-- zysec-license-check -->
-            ⚠️ **License Compatibility Check Failed**
-
-            This PR introduces text matching a license incompatible with ZySec AI's proprietary commercial software model.
-
-            **Incompatible types:**
-            | Type | Examples | Why blocked |
-            |------|----------|-------------|
-            | Copyleft | GPL, AGPL, LGPL | Forces source code disclosure on distribution |
-            | Source-available non-commercial | SSPL, BSL, Elastic License, PolyForm | Restricts commercial hosting/selling |
-            | Anti-commercial clause | Commons Clause | Prohibits selling software that includes it |
-
-            **Permitted licenses for dependencies:** MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0
-
-            **Actions:**
-            1. Replace the flagged dependency with a permissively-licensed alternative
-            2. If false positive, add the \`bot-skip\` label
-
-            > Auto-detected by ZySec AI license compatibility check`;
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
-            }
+          echo "check-license: no incompatible license text detected"
