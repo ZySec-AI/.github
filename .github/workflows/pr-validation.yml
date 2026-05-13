@@ -1,0 +1,165 @@
+# =============================================================================
+# WORKFLOW: PR Validation
+# PURPOSE:  All pull_request checks that gate merge readiness:
+#           (1) branch-checks — naming convention + valid merge flow (no checkout)
+#           (2) validate      — description, type label, milestone, hotfix fast-track
+# TRIGGERS: pull_request all branches (superset of both original workflows)
+# WHY merged: both cover all branches, branch-checks needs no checkout so it
+#   runs in parallel with validate at zero extra cost.
+# SKIP:     N/A — these are required gates. Use 'bot-skip' only on
+#           needs-rebase / pr-check-deps (different workflow).
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, labeled, unlabeled, ready_for_review, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  branch-checks:
+    name: Branch name + merge flow
+    runs-on: ubuntu-latest
+    # No checkout needed — only uses github context variables
+    steps:
+      - name: Validate branch name (Conventional Commits)
+        run: |
+          BRANCH="${{ github.head_ref }}"
+
+          # Allowed prefixes — broad enough for real teams
+          PATTERN='^(feat|feature|fix|bugfix|bug|hotfix|chore|docs|doc|documentation|refactor|test|tests|perf|performance|build|ci|cd|cicd|revert|release-prep|support|experiment|exp|spike|task|improve|improvement)/[a-zA-Z0-9][a-zA-Z0-9._/-]*$'
+          EXEMPT='^(develop|stage|main|release|release/.+|staging)$'
+
+          if [[ "$BRANCH" =~ $EXEMPT ]] || [[ "$BRANCH" =~ $PATTERN ]]; then
+            echo "✓ Branch name valid: $BRANCH"
+          else
+            echo "⚠️ Branch name '$BRANCH' looks unusual."
+            echo ""
+            echo "Recommended format: type/short-description"
+            echo ""
+            echo "Allowed prefixes:"
+            echo "  feat | feature | fix | bugfix | bug | hotfix | chore"
+            echo "  docs | doc | documentation | refactor | test | tests"
+            echo "  perf | performance | build | ci | cd | cicd | revert"
+            echo "  release-prep | support | experiment | exp | spike | task | improve"
+            echo ""
+            echo "Examples: feat/oauth-login  fix/JIRA-123  chore/bump-deps  feat/user/auth"
+            echo "This is a WARNING only — the check still passes."
+          fi
+
+      - name: Validate merge flow
+        run: |
+          SRC="${{ github.head_ref }}"
+          DST="${{ github.base_ref }}"
+          echo "Flow: $SRC → $DST"
+
+          case "$DST" in
+            develop)
+              [[ "$SRC" =~ ^(stage|release)$ ]] && { echo "✓ back-merge: $SRC → develop"; exit 0; }
+              echo "✓ $SRC → develop"
+              ;;
+            stage|staging)
+              [[ "$SRC" == "develop" ]] && { echo "✓ promote: develop → $DST"; exit 0; }
+              echo "❌ Only 'develop' may promote to '$DST'"; exit 1
+              ;;
+            release|release/*)
+              if [[ "$SRC" == "develop" || "$SRC" == "stage" || "$SRC" == "staging" || "$SRC" =~ ^hotfix/ ]]; then
+                echo "✓ $SRC → $DST"
+                exit 0
+              fi
+              echo "❌ Only 'develop', 'stage', or 'hotfix/*' may merge into release"; exit 1
+              ;;
+            main)
+              if [[ "$SRC" == "release" || "$SRC" =~ ^release/ || "$SRC" =~ ^hotfix/ ]]; then
+                echo "✓ $SRC → main"
+                exit 0
+              fi
+              echo "❌ Direct merge to main is not allowed. Path: develop → release → main."
+              exit 1
+              ;;
+            *)
+              echo "⚠️ Merging into '$DST' — verify this is intentional (non-standard target)"
+              ;;
+          esac
+
+  validate:
+    name: Validate PR metadata
+    runs-on: ubuntu-latest
+    # Runs in parallel with branch-checks — independent concerns
+    steps:
+      - name: Check PR has description
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [ -z "$BODY" ] || [ ${#BODY} -lt 20 ]; then
+            echo "❌ PR description is empty or too short. Describe what changed and why."
+            exit 1
+          fi
+          echo "✓ PR has description"
+
+      - name: Check type label
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+        run: |
+          RESPONSE=$(gh api /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/labels 2>/dev/null || echo "[]")
+          # Bail out gracefully if the API returned an error object instead of an array
+          if echo "$RESPONSE" | grep -q '"message"'; then
+            echo "⚠️ Could not fetch labels (API error) — skipping type label check"
+            echo "Response: $RESPONSE"
+            exit 0
+          fi
+          LABELS=$(echo "$RESPONSE" | jq -r '.[].name' 2>/dev/null || echo "")
+          echo "Labels: $LABELS"
+
+          HAS_TYPE=false
+          while IFS= read -r label; do
+            case "$label" in
+              bug|feature|feat|enhancement|chore|docs|documentation|fix|hotfix|refactor|test|perf|ci) HAS_TYPE=true ;;
+            esac
+          done <<< "$LABELS"
+
+          if ! $HAS_TYPE; then
+            echo "❌ PR must have a type label: feat, feature, bug, fix, enhancement, chore, docs, refactor, test, perf, ci"
+            exit 1
+          fi
+          echo "✓ type label present"
+
+      - name: Check milestone
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+        run: |
+          MILESTONE=$(gh api /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }} \
+            --jq '.milestone.title // ""' 2>/dev/null || echo "")
+          if [ -z "$MILESTONE" ]; then
+            echo "⚠️ No milestone set on this PR. Consider assigning one."
+          else
+            echo "✓ milestone: $MILESTONE"
+          fi
+
+      - name: Hotfix fast-track
+        if: contains(github.event.pull_request.labels.*.name, 'hotfix')
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          PR="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+
+          # Set 00-Immediate milestone if exists
+          MILESTONE=$(gh api /repos/$REPO/milestones \
+            --jq '.[] | select(.title | startswith("00")) | .number' 2>/dev/null | head -1 || echo "")
+          [ -n "$MILESTONE" ] && gh api -X PATCH /repos/$REPO/pulls/$PR -f milestone=$MILESTONE >/dev/null 2>&1 || true
+
+          # Add comment
+          gh pr comment $PR --repo $REPO \
+            --body "🚨 **Hotfix detected** — fast-track rules apply:
+          - Requires 1 expedited review (target: 1 hour)
+          - Bypasses code freeze
+          - Will be merged directly to \`release\` after approval" \
+            2>/dev/null || true
+
+          echo "✓ hotfix fast-track applied"
