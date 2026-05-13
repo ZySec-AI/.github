@@ -184,7 +184,7 @@ jobs:
     name: Open issues for findings
     runs-on: ubuntu-latest
     needs: [secret-scan, trivy-fs]
-    if: always() && github.event_name != 'pull_request'
+    if: ${{ always() && github.event_name != 'pull_request' }}
     permissions:
       issues: write
       contents: read
