@@ -1,0 +1,20 @@
+name: PR Dependency Order
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  check-deps:
+    name: Check PR dependencies are merged
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.pull_request.labels.*.name, 'bot-skip')"
+    steps:
+      - name: Check dependency ordering
+        uses: gregsdennis/dependencies-action@f98d55eee1f66e7aaea4a60e71892736ae2548c7
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
