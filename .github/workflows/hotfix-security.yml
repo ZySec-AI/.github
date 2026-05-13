@@ -1,4 +1,17 @@
-name: Security (Hotfix Fast-Path)
+# =============================================================================
+# WORKFLOW: Security + AI Review (Release PRs)
+# PURPOSE:  PRs to release branch get:
+#           - fast security gate (hotfix label: gitleaks+trivy only, < 5 min)
+#           - full security gate (non-hotfix: all scans)
+#           - AI code review with fail_on:HIGH (blocks merge on HIGH/CRITICAL findings)
+# TRIGGERS: pull_request to release (opened, synchronize, reopened)
+# WHY fail_on HIGH here: release is the last gate before production.
+#   develop PRs use fail_on:NEVER (advisory). Release PRs enforce it.
+# WHY merged with security: both target release PRs — saves a runner boot,
+#   and the AI review needs the same checkout the security jobs already do.
+# CONTACT:  platform-eng@zysec.ai | #releases
+# =============================================================================
+name: Security + AI Review (Release PRs)
 
 on:
   pull_request:
@@ -9,36 +22,47 @@ permissions:
   contents: read
   security-events: write
   pull-requests: write
+  issues: write
+
+concurrency:
+  group: release-pr-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   fast-security:
     name: Fast Security Gate (hotfix)
     if: contains(github.event.pull_request.labels.*.name, 'hotfix')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
-        continue-on-error: true
-
-      - name: Dependency review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0
-          comment-summary-in-pr: true
-        continue-on-error: true
+    uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@main
+    with:
+      python: true
+      node: true
+      fast-mode: true
+    secrets:
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+      TRIVY_TEAM_WEBHOOK: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
 
   full-security:
     name: Full Security Gate (non-hotfix)
     if: "!contains(github.event.pull_request.labels.*.name, 'hotfix')"
     uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@main
+    with:
+      python: true
+      node: true
+      fast-mode: false
     secrets:
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
       TRIVY_TEAM_WEBHOOK: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
+
+  ai-review:
+    name: AI Code Review (blocking on HIGH+)
+    # Skip for bot-skip label or drafts; run regardless of security job result
+    if: |
+      !contains(github.event.pull_request.labels.*.name, 'bot-skip') &&
+      github.event.pull_request.draft == false
+    uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
+    secrets:
+      LLM_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+    with:
+      mode: pr-review
+      fail_on: HIGH   # stricter than develop (NEVER) — release is pre-production gate
