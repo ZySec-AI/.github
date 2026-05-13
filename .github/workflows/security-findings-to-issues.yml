@@ -1,0 +1,109 @@
+# =============================================================================
+# WORKFLOW: Security Findings to Issues
+# PURPOSE:  After a security scan completes on push/schedule, opens GitHub
+#           issues for HIGH/CRITICAL findings from Trivy or a failed scan.
+# TRIGGERS: workflow_run — fires when "Security" workflow completes
+# WHY separate workflow: github.event_name is not accessible inside a reusable.
+#   workflow_run trigger receives the parent run context directly.
+# SKIP:     Does not fire on PR-triggered security runs.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: Security Findings to Issues
+
+on:
+  workflow_run:
+    workflows: ["Security"]
+    types: [completed]
+    branches: [release, develop, main]
+
+permissions:
+  issues: write
+  contents: read
+  actions: read
+
+jobs:
+  open-issues:
+    name: Open issues for security findings
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Run Trivy for JSON findings
+        uses: aquasecurity/trivy-action@a20de5420d57c4102486cdd9349b532bf5b3c8e7  # v0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: json
+          output: trivy-findings.json
+        continue-on-error: true
+
+      - name: Open GitHub issues for findings
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          python3 /dev/stdin << 'PYEOF'
+          import json, os, subprocess
+
+          repo = os.environ["REPO"]
+          ref  = os.environ["REF"]
+          sha  = os.environ["SHA"][:8]
+          parent = os.environ["PARENT_CONCLUSION"]
+
+          def open_issue_if_new(title, body, labels):
+              r = subprocess.run(
+                  ["gh","issue","list","--repo",repo,"--state","open",
+                   "--search",title[:60],"--json","number","--jq",".[0].number"],
+                  capture_output=True, text=True)
+              if r.stdout.strip():
+                  print(f"  deduped #{r.stdout.strip()}: {title[:60]}")
+                  return
+              subprocess.run(["gh","issue","create","--repo",repo,
+                  "--title",title,"--label",labels,"--body",body],
+                  capture_output=True)
+              print(f"  opened: {title[:80]}")
+
+          try:
+              data = json.load(open("trivy-findings.json"))
+              for result in data.get("Results",[]):
+                  for v in result.get("Vulnerabilities",[]):
+                      sev = v.get("Severity","")
+                      if sev not in ("HIGH","CRITICAL"):
+                          continue
+                      vid  = v.get("VulnerabilityID","unknown")
+                      pkg  = v.get("PkgName","unknown")
+                      inst = v.get("InstalledVersion","?")
+                      fixed= v.get("FixedVersion","no fix available")
+                      title = f"security: {vid} ({sev}) in {pkg}@{inst}"
+                      body  = (f"## {sev} CVE: {vid}\n\n"
+                               f"**Package:** `{pkg}` @ `{inst}`\n"
+                               f"**Fix:** `{fixed}`\n"
+                               f"**Branch:** `{ref}` @ `{sha}`\n\n"
+                               f"Upgrade `{pkg}` to `{fixed}` or add to `.trivyignore`.\n\n"
+                               f"---\n*Auto-opened by security scan*")
+                      open_issue_if_new(title, body,
+                          f"dimension:security,severity:{sev.lower()},type:bug")
+          except Exception as e:
+              print(f"trivy parse skipped: {e}")
+
+          if parent == "failure":
+              title = f"security: scan failure on {ref} @ {sha}"
+              body  = (f"## Security Scan Failed\n\n"
+                       f"The security workflow failed on `{ref}` @ `{sha}`.\n\n"
+                       f"Possible causes: secret leak (Gitleaks) or SAST finding.\n\n"
+                       f"Check the Actions tab for details.\n\n"
+                       f"If Gitleaks: rotate the credential and rewrite history.\n\n"
+                       f"---\n*Auto-opened by security findings workflow*")
+              open_issue_if_new(title, body,
+                  "dimension:security,severity:high,type:bug")
+
+          print("done")
+          PYEOF
