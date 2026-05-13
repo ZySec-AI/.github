@@ -1,3 +1,14 @@
+# =============================================================================
+# WORKFLOW: Sync Canonical Labels Org-Wide
+# PURPOSE:  Ensures all non-archived org repos have the standard label set
+# TRIGGERS: schedule (daily 02:00 UTC), push to main (labels.json changed),
+#           workflow_dispatch
+# SECRETS:  ORG_ADMIN_TOKEN
+# FIX:      Counter variables (CREATED, UPDATED) were inside a while/piped loop
+#           which runs in a subshell — counters always printed 0 in summary.
+#           Fixed by using process substitution (< <(...)) to keep the same shell.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: sync canonical labels org-wide
 
 on:
@@ -20,50 +31,74 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Sync labels to all org repos
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           set -euo pipefail
-          
-          REPOS=$(gh api --paginate /orgs/ZySec-AI/repos --jq '.[] | select(.archived==false) | .name')
+
           LABELS_FILE=".github/labels/labels.json"
-          
+
+          if [ ! -f "$LABELS_FILE" ]; then
+            echo "::error::$LABELS_FILE not found. Create the file first."
+            exit 1
+          fi
+
           CREATED=0
           UPDATED=0
-          REPOS_TOUCHED=0
-          
-          for REPO in $REPOS; do
-            REPO_TOUCHED=false
-            
-            # For each canonical label
-            jq -c '.[]' "$LABELS_FILE" | while read -r LABEL; do
-              NAME=$(echo "$LABEL" | jq -r '.name')
+          ERRORS=0
+
+          # FIX: use process substitution (< <(...)) instead of pipe (| while read)
+          # Pipe creates a subshell — variables modified inside never propagate out.
+          # Process substitution keeps the while loop in the current shell.
+          while IFS= read -r REPO; do
+            echo "→ $REPO"
+
+            while IFS= read -r LABEL; do
+              NAME=$(echo  "$LABEL" | jq -r '.name')
               COLOR=$(echo "$LABEL" | jq -r '.color')
-              DESC=$(echo "$LABEL" | jq -r '.description')
-              
-              # Check if label exists
+              DESC=$(echo  "$LABEL" | jq -r '.description // ""')
+
               EXISTING=$(gh api "/repos/ZySec-AI/$REPO/labels/$NAME" 2>/dev/null || echo "")
-              
+
               if [ -z "$EXISTING" ]; then
-                # Create
-                gh api -X POST "/repos/ZySec-AI/$REPO/labels" \
-                  -f name="$NAME" -f color="$COLOR" -f description="$DESC" >/dev/null 2>&1 \
-                  && echo "  + $REPO: created '$NAME'"
+                if gh api -X POST "/repos/ZySec-AI/$REPO/labels" \
+                    -f name="$NAME" -f color="$COLOR" -f description="$DESC" \
+                    >/dev/null 2>&1; then
+                  echo "  + created '$NAME'"
+                  CREATED=$((CREATED + 1))
+                else
+                  echo "  ✗ failed to create '$NAME'"
+                  ERRORS=$((ERRORS + 1))
+                fi
               else
-                # Update if color/desc differ
                 CUR_COLOR=$(echo "$EXISTING" | jq -r '.color')
-                CUR_DESC=$(echo "$EXISTING" | jq -r '.description // ""')
+                CUR_DESC=$(echo  "$EXISTING" | jq -r '.description // ""')
                 if [ "$CUR_COLOR" != "$COLOR" ] || [ "$CUR_DESC" != "$DESC" ]; then
-                  gh api -X PATCH "/repos/ZySec-AI/$REPO/labels/$NAME" \
-                    -f color="$COLOR" -f description="$DESC" >/dev/null 2>&1 \
-                    && echo "  ~ $REPO: updated '$NAME'"
+                  if gh api -X PATCH "/repos/ZySec-AI/$REPO/labels/$NAME" \
+                      -f color="$COLOR" -f description="$DESC" \
+                      >/dev/null 2>&1; then
+                    echo "  ~ updated '$NAME'"
+                    UPDATED=$((UPDATED + 1))
+                  else
+                    echo "  ✗ failed to update '$NAME'"
+                    ERRORS=$((ERRORS + 1))
+                  fi
                 fi
               fi
-            done
-          done
-          
+            done < <(jq -c '.[]' "$LABELS_FILE")
+
+          done < <(gh api --paginate /orgs/ZySec-AI/repos \
+            --jq '.[] | select(.archived==false) | .name')
+
           echo ""
-          echo "✓ Label sync complete"
+          echo "Label sync complete"
+          echo "  Created : $CREATED"
+          echo "  Updated : $UPDATED"
+          echo "  Errors  : $ERRORS"
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::warning title=Label Sync::$ERRORS label(s) failed to sync. Check logs above."
+          fi
