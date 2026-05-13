@@ -1,3 +1,13 @@
+# =============================================================================
+# WORKFLOW: Reusable — Quality Gates
+# PURPOSE:  Auto-detects or accepts explicit python/node/rust flags; runs
+#           lint + type-check + tests for each detected language
+# TRIGGERS: workflow_call
+# INPUTS:   python, node, rust (bool — override auto-detect if set to true)
+#           coverage_threshold (int, default 80), python_version, node_version
+# SECRETS:  ORG_ADMIN_TOKEN (optional — for private dep installs)
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: quality gates (reusable)
 
 on:
@@ -34,7 +44,7 @@ jobs:
       node: ${{ steps.check.outputs.node }}
       rust: ${{ steps.check.outputs.rust }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Check for project files
         id: check
         run: |
@@ -42,13 +52,28 @@ jobs:
           node=0
           rust=0
 
-          [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ] && python=1
-          [ -f "package.json" ] && node=1
-          [ -f "Cargo.toml" ] && rust=1
+          # FIX: use if/then — previous || && had wrong precedence.
+          # Old: [ -f pyproject.toml ] || [ -f setup.py ] && python=1
+          # That parsed as: pyproject.toml OR (setup.py AND python=1)
+          # So pyproject.toml-only repos always got python=0 — no checks ran.
+          if [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+            python=1
+          fi
+          if [ -f "package.json" ]; then
+            node=1
+          fi
+          if [ -f "Cargo.toml" ]; then
+            rust=1
+          fi
+
+          # Explicit inputs override auto-detect
+          [ "${{ inputs.python }}" = "true" ] && python=1
+          [ "${{ inputs.node }}"   = "true" ] && node=1
+          [ "${{ inputs.rust }}"   = "true" ] && rust=1
 
           echo "python=$python" >> $GITHUB_OUTPUT
-          echo "node=$node" >> $GITHUB_OUTPUT
-          echo "rust=$rust" >> $GITHUB_OUTPUT
+          echo "node=$node"     >> $GITHUB_OUTPUT
+          echo "rust=$rust"     >> $GITHUB_OUTPUT
           echo "Detected: python=$python node=$node rust=$rust"
 
   python-quality:
@@ -58,11 +83,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb  # v5.4.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: ${{ inputs.python_version }}
 
@@ -77,16 +102,21 @@ jobs:
         run: uv sync --frozen
 
       - name: Ruff lint
+        # If this fails: run 'uv run ruff check .' locally and fix reported errors
         run: uv run ruff check . --output-format=github
 
       - name: Ruff format
+        # If this fails: run 'uv run ruff format .' locally, then commit the changes
         run: uv run ruff format --check .
 
       - name: MyPy type check
+        # Advisory — does not block merge, but findings should be addressed
         run: uv run mypy . --ignore-missing-imports
         continue-on-error: true
 
       - name: pytest + coverage
+        # If this fails: run 'uv run pytest -x' locally to see the failure.
+        # Coverage below ${{ inputs.coverage_threshold }}%? Add or fix tests.
         run: |
           uv run pytest \
             --cov=src \
@@ -97,7 +127,7 @@ jobs:
             -q
         continue-on-error: false
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         if: always()
         with:
           name: coverage-report
@@ -111,13 +141,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: ${{ inputs.node_version }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddaa  # v4.1.0
         with:
           version: latest
 
@@ -125,7 +155,7 @@ jobs:
         id: pnpm-cache
         run: echo "store=$(pnpm store path)" >> $GITHUB_OUTPUT
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
         with:
           path: ${{ steps.pnpm-cache.outputs.store }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -135,16 +165,20 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: ESLint
+        # If this fails: run 'pnpm run lint' locally and fix reported errors
         run: pnpm run lint --if-present
 
       - name: Type check
+        # If this fails: run 'pnpm run type-check' or 'tsc --noEmit' locally
         run: |
           pnpm run type-check --if-present || \
           pnpm run typecheck --if-present || \
           pnpm exec tsc --noEmit
 
       - name: Build
-        run: pnpm run build
+        # FIX: added --if-present — libraries without a build script were failing here
+        # If this fails: run 'pnpm run build' locally and check for errors
+        run: pnpm run build --if-present
 
   rust-quality:
     name: Rust — fmt / clippy / test
@@ -153,21 +187,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53f26a018afd260df  # stable 2025-03
         with:
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050f2c635e5f4e2db5a3e71dc3f  # v2.7.8
 
       - name: fmt check
+        # If this fails: run 'cargo fmt --all' locally and commit the changes
         run: cargo fmt --all -- --check
 
       - name: clippy
+        # If this fails: run 'cargo clippy' locally and fix warnings
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: test
+        # If this fails: run 'cargo test' locally to reproduce
         run: cargo test --all-features
 
   quality-gate:
@@ -178,15 +215,32 @@ jobs:
     steps:
       - name: Evaluate gates
         run: |
-          FAILED=false
-          for result in \
-            "${{ needs.python-quality.result }}" \
-            "${{ needs.node-quality.result }}" \
-            "${{ needs.rust-quality.result }}"; do
-            [ "$result" == "failure" ] && FAILED=true
+          py="${{ needs.python-quality.result }}"
+          nd="${{ needs.node-quality.result }}"
+          rs="${{ needs.rust-quality.result }}"
+
+          echo "python-quality : $py"
+          echo "node-quality   : $nd"
+          echo "rust-quality   : $rs"
+
+          # FIX 1: treat 'cancelled' as a failure (not just 'failure')
+          # A cancelled job means something went wrong (timeout, infra error)
+          for result in "$py" "$nd" "$rs"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error title=Quality Gate Failed::One or more quality jobs failed or were cancelled."
+              echo "Check the failed job above for details and run the failing tool locally."
+              exit 1
+            fi
           done
-          if $FAILED; then
-            echo "One or more quality gates failed."
-            exit 1
+
+          # FIX 2: warn loudly if ALL jobs were skipped (nothing was checked)
+          # This happens when no recognised language files exist in the repo
+          if [ "$py" = "skipped" ] && [ "$nd" = "skipped" ] && [ "$rs" = "skipped" ]; then
+            echo "::warning title=Quality Gate Warning::All quality jobs were skipped."
+            echo "No pyproject.toml, package.json, or Cargo.toml was found."
+            echo "If this repo contains source code, check language detection or"
+            echo "pass explicit inputs (python: true / node: true) to quality.yml."
+            exit 0
           fi
+
           echo "All quality gates passed."
