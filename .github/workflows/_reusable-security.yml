@@ -1,5 +1,5 @@
 # =============================================================================
-# WORKFLOW: Reusable — Security Scanning
+# WORKFLOW: Reusable - Security Scanning
 # PURPOSE:  Runs gitleaks secret scan, bandit SAST, CodeQL, dependency-review,
 #           trivy filesystem + container scans, and auto-opens GitHub issues
 #           for HIGH/CRITICAL findings on non-PR runs (push/schedule).
@@ -7,7 +7,7 @@
 # INPUTS:   python (bool, default true), node (bool, default true),
 #           rust (bool, default false), fast-mode (bool, default false)
 # SECRETS:  ORG_ADMIN_TOKEN, TRIVY_TEAM_WEBHOOK (optional)
-# WHY fast-mode: hotfix path needs < 5min; skips CodeQL (slow) but keeps
+# WHY fast-mode: hotfix path needs <5min; skips CodeQL (slow) but keeps
 #                gitleaks + trivy (fast, highest-value for hotfixes)
 # CONTACT:  platform-eng@zysec.ai
 # =============================================================================
@@ -35,7 +35,7 @@ on:
         type: string
         default: ''
       fast-mode:
-        description: 'Skip slow scans (CodeQL, bandit) — used by hotfix fast-path'
+        description: 'Skip slow scans (CodeQL, bandit) - used by hotfix fast-path'
         type: boolean
         default: false
     secrets:
@@ -55,17 +55,13 @@ jobs:
         with:
           fetch-depth: 0
       - name: Run gitleaks
-        # PINNED: was gitleaks/gitleaks-action@v2 (mutable tag)
-        # If this fails: a secret was found in the diff. Run gitleaks locally:
-        #   brew install gitleaks && gitleaks detect --source .
         uses: gitleaks/gitleaks-action@44c470e531f84e7b3946e6e6326d54d5dfece8d5  # v2.3.4
         env:
           GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-        # REMOVED: continue-on-error: true — secret leaks must block merge
 
   sast-python:
-    name: SAST — bandit (Python)
+    name: SAST - bandit (Python)
     if: inputs.python && !inputs.fast-mode
     runs-on: ubuntu-latest
     permissions:
@@ -78,30 +74,25 @@ jobs:
           python-version: '3.12'
       - name: Install bandit
         run: pip install bandit[toml]
-      - name: Run bandit (SARIF output for Security tab)
+      - name: Run bandit (SARIF output)
         run: |
           bandit -r . \
             --exclude './.venv,./venv,./node_modules,./tests,./test' \
-            -ll \
-            -f sarif \
-            -o bandit.sarif || true
-      - name: Upload SARIF to GitHub Security tab
+            -ll -f sarif -o bandit.sarif || true
+      - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f  # v3.28.18
         if: always()
         with:
           sarif_file: bandit.sarif
           category: bandit
       - name: Fail on HIGH/CRITICAL findings
-        # If this fails: bandit found a HIGH/CRITICAL issue. Check Security tab
-        # or run: bandit -r . -lll
         run: |
           bandit -r . \
             --exclude './.venv,./venv,./node_modules,./tests,./test' \
-            -lll \
-            -f txt
+            -lll -f txt
 
   sast-codeql:
-    name: SAST — CodeQL
+    name: SAST - CodeQL
     if: (inputs.python || inputs.node) && !inputs.fast-mode
     runs-on: ubuntu-latest
     permissions:
@@ -144,7 +135,7 @@ jobs:
         continue-on-error: true
 
   trivy-fs:
-    name: Trivy — filesystem scan
+    name: Trivy - filesystem scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -152,9 +143,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Run Trivy (filesystem)
-        # PINNED: was aquasecurity/trivy-action@master (floating branch — supply chain risk)
-        # If this fails: Trivy found HIGH/CRITICAL CVEs. Check Security tab or run:
-        #   trivy fs --severity HIGH,CRITICAL .
         uses: aquasecurity/trivy-action@a20de5420d57c4102486cdd9349b532bf5b3c8e7  # v0.28.0
         with:
           scan-type: fs
@@ -170,7 +158,7 @@ jobs:
           category: trivy-fs
 
   trivy-image:
-    name: Trivy — container image scan
+    name: Trivy - container image scan
     if: inputs.docker && inputs.image_ref != ''
     runs-on: ubuntu-latest
     permissions:
@@ -195,144 +183,96 @@ jobs:
   open-security-issues:
     name: Open issues for findings
     runs-on: ubuntu-latest
-    # Only on push/schedule — PR scans already surface in the PR checks UI.
-    # Opening issues on every PR would create noise for every push to a feature branch.
-    if: github.event_name != 'pull_request'
     needs: [secret-scan, trivy-fs]
-    # Run even if scans failed — we want issues opened for failures too
-    if: github.event_name != 'pull_request' && always()
+    if: always() && github.event_name != 'pull_request'
     permissions:
       issues: write
       contents: read
-      security-events: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - name: Open issues for HIGH/CRITICAL findings
+      - name: Re-run trivy for JSON output
+        uses: aquasecurity/trivy-action@a20de5420d57c4102486cdd9349b532bf5b3c8e7  # v0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: json
+          output: trivy-findings.json
+        continue-on-error: true
+      - name: Open GitHub issues for findings
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           REPO: ${{ github.repository }}
           REF: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
         run: |
-          set -euo pipefail
-
-          open_issue_if_new() {
-            local TITLE="$1"
-            local BODY="$2"
-            local LABELS="$3"
-
-            # Dedupe: skip if an open issue with same title already exists
-            EXISTING=$(gh issue list --repo "$REPO" --state open \
-              --search "$TITLE" --json number --jq '.[0].number' 2>/dev/null || echo "")
-            if [ -n "$EXISTING" ]; then
-              echo "  ↩ deduped: issue #$EXISTING already open for: $TITLE"
-              return
-            fi
-
-            gh issue create --repo "$REPO" \
-              --title "$TITLE" \
-              --label "$LABELS" \
-              --body "$BODY" 2>/dev/null \
-              && echo "  ✓ opened issue: $TITLE" \
-              || echo "  ⚠ failed to open issue (check labels exist)"
-          }
-
-          # Parse trivy-fs SARIF if it exists (uploaded as artifact by trivy-fs job)
-          # We re-run trivy here in table format to get parseable output — SARIF is
-          # too verbose for simple shell parsing and the artifact isn't accessible
-          # cross-job without upload/download steps.
-          if [ -f "trivy-fs.sarif" ]; then
-            echo "→ Parsing trivy-fs SARIF for HIGH/CRITICAL findings..."
-            python3 - <<'PYEOF'
+          python3 - << 'PYEOF'
           import json, os, subprocess, sys
 
-          with open("trivy-fs.sarif") as f:
-              sarif = json.load(f)
-
-          findings = []
-          for run in sarif.get("runs", []):
-              rules = {r["id"]: r for r in run.get("tool", {}).get("driver", {}).get("rules", [])}
-              for result in run.get("results", []):
-                  rule_id = result.get("ruleId", "")
-                  severity = rules.get(rule_id, {}).get("properties", {}).get("security-severity", "")
-                  try:
-                      sev_f = float(severity)
-                  except (ValueError, TypeError):
-                      sev_f = 0.0
-                  if sev_f >= 7.0:  # HIGH=7.0, CRITICAL=9.0
-                      msg = result.get("message", {}).get("text", "")
-                      locs = result.get("locations", [{}])
-                      loc = locs[0].get("physicalLocation", {}) if locs else {}
-                      uri = loc.get("artifactLocation", {}).get("uri", "unknown")
-                      findings.append({"id": rule_id, "severity": "CRITICAL" if sev_f >= 9.0 else "HIGH", "msg": msg, "file": uri})
-
-          with open("/tmp/trivy-findings.json", "w") as f:
-              json.dump(findings, f)
-          print(f"Trivy findings >= HIGH: {len(findings)}")
-          PYEOF
-          else
-            echo "[]" > /tmp/trivy-findings.json
-            echo "→ No trivy-fs.sarif found (scan may not have run)"
-          fi
-
-          FINDINGS=$(cat /tmp/trivy-findings.json)
-          COUNT=$(echo "$FINDINGS" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
-
-          if [ "$COUNT" -gt 0 ]; then
-            echo "→ Opening issues for $COUNT trivy findings..."
-            echo "$FINDINGS" | python3 - <<PYEOF
-          import json, sys, subprocess, os
-
-          findings = json.load(sys.stdin)
           repo = os.environ["REPO"]
           ref = os.environ["REF"]
           sha = os.environ["SHA"][:8]
+          secret_result = os.environ["SECRET_SCAN_RESULT"]
 
-          for f in findings:
-              title = f"security: {f['id']} — {f['severity']} CVE in {f['file']}"
-              body = f"""## Security Finding — {f['severity']}
-
-          **CVE/Rule:** {f['id']}
-          **File:** \`{f['file']}\`
-          **Branch:** \`{ref}\` @ \`{sha}\`
-
-          ### Details
-          {f['msg']}
-
-          ### Remediation
-          1. Check the Security tab for full details
-          2. Update the affected dependency: \`trivy fs --severity HIGH,CRITICAL .\`
-          3. If unfixable upstream, add to \`.trivyignore\` with a comment explaining why
-
-          ---
-          *Auto-opened by security scan on push to \`{ref}\`*"""
-              labels = f"dimension:security,severity:{f['severity'].lower()},type:bug"
-              subprocess.run(["gh", "issue", "create", "--repo", repo,
-                              "--title", title, "--label", labels, "--body", body],
-                             capture_output=True)
+          def open_issue_if_new(title, body, labels):
+              result = subprocess.run(
+                  ["gh", "issue", "list", "--repo", repo, "--state", "open",
+                   "--search", title, "--json", "number", "--jq", ".[0].number"],
+                  capture_output=True, text=True)
+              if result.stdout.strip():
+                  print(f"  deduped: #{result.stdout.strip()} already open")
+                  return
+              subprocess.run(
+                  ["gh", "issue", "create", "--repo", repo,
+                   "--title", title, "--label", labels, "--body", body],
+                  capture_output=True)
               print(f"  opened: {title}")
+
+          # Parse trivy JSON findings
+          try:
+              with open("trivy-findings.json") as f:
+                  data = json.load(f)
+              results = data.get("Results", [])
+              for r in results:
+                  for vuln in r.get("Vulnerabilities", []):
+                      sev = vuln.get("Severity", "")
+                      if sev not in ("HIGH", "CRITICAL"):
+                          continue
+                      vid = vuln.get("VulnerabilityID", "unknown")
+                      pkg = vuln.get("PkgName", "unknown")
+                      installed = vuln.get("InstalledVersion", "?")
+                      fixed = vuln.get("FixedVersion", "no fix available")
+                      title = f"security: {vid} ({sev}) in {pkg}@{installed}"
+                      body = (
+                          f"## Security Finding - {sev}\n\n"
+                          f"**CVE:** {vid}\n"
+                          f"**Package:** `{pkg}` @ `{installed}`\n"
+                          f"**Fix available:** `{fixed}`\n"
+                          f"**Branch:** `{ref}` @ `{sha}`\n\n"
+                          f"### Remediation\n"
+                          f"Upgrade `{pkg}` to `{fixed}` or add to `.trivyignore` with justification.\n\n"
+                          f"---\n*Auto-opened by trivy scan on push to `{ref}`*"
+                      )
+                      labels = f"dimension:security,severity:{sev.lower()},type:bug"
+                      open_issue_if_new(title, body, labels)
+          except Exception as e:
+              print(f"trivy parse error (non-fatal): {e}")
+
+          # Open issue if gitleaks failed
+          if secret_result == "failure":
+              title = f"security: secret detected in {ref} @ {sha}"
+              body = (
+                  f"## Secret Detected by Gitleaks\n\n"
+                  f"**Branch:** `{ref}` @ `{sha}`\n\n"
+                  f"### Immediate actions\n"
+                  f"1. Identify and rotate the exposed credential immediately\n"
+                  f"2. Run locally: `brew install gitleaks && gitleaks detect --source .`\n"
+                  f"3. Rewrite history or make repo private if secret is in git history\n\n"
+                  f"---\n*Auto-opened by gitleaks scan on push to `{ref}`*"
+              )
+              open_issue_if_new(title, body, "dimension:security,severity:critical,type:bug")
+
+          print("done")
           PYEOF
-          else
-            echo "→ No HIGH/CRITICAL trivy findings — no issues to open"
-          fi
-
-          # Surface gitleaks failure as issue
-          if [ "${{ needs.secret-scan.result }}" = "failure" ]; then
-            TITLE="security: secret or credential detected in $REF @ ${SHA:0:8}"
-            BODY="## Secret Detected by Gitleaks
-
-          Gitleaks found a verified secret or credential committed to \`$REF\`.
-
-          **Commit:** \`$SHA\`
-          **Branch:** \`$REF\`
-
-          ### Immediate actions
-          1. \`git log --all --full-history -- <file>\` to find the commit
-          2. Rotate the exposed credential immediately — treat it as compromised
-          3. Rewrite git history or make the repo private if the secret is in history
-          4. Run locally: \`brew install gitleaks && gitleaks detect --source .\`
-
-          ---
-          *Auto-opened by gitleaks scan on push to \`$REF\`*"
-            open_issue_if_new "$TITLE" "$BODY" "dimension:security,severity:critical,type:bug"
-          fi
