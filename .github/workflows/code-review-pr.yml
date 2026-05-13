@@ -1,3 +1,12 @@
+# =============================================================================
+# WORKFLOW: AI Code Review (PR)
+# PURPOSE:  Filters trivial-only PRs then runs LLM review on meaningful diffs
+# TRIGGERS: pull_request (opened, synchronize, reopened, ready_for_review)
+# SECRETS:  ANTHROPIC_API_KEY (mapped to LLM_API_KEY in reusable)
+# WHY concurrency scoped by repo: concurrency group was just PR number, meaning
+#   PR #42 in repo-a and PR #42 in repo-b shared a group and cancelled each other
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: Code Review (PR)
 
 on:
@@ -11,7 +20,8 @@ permissions:
   issues: write
 
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number }}
+  # FIX: was ai-review-${{ pr.number }} — collided across repos (same PR number)
+  group: ai-review-${{ github.repository }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -21,7 +31,7 @@ jobs:
     outputs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
       - name: Check diff for meaningful changes
@@ -29,10 +39,8 @@ jobs:
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          # Get changed files
           CHANGED=$(git diff --name-only "$BASE".."$HEAD" 2>/dev/null || echo "")
           TOTAL=$(echo "$CHANGED" | grep -c . || echo 0)
-          # Count non-trivial files (exclude lock, md, json config, yaml, txt)
           MEANINGFUL=$(echo "$CHANGED" | grep -vcE '\.(lock|md|txt|json|ya?ml|toml|env\.example|gitignore|prettierrc|eslintrc)$' || echo 0)
           echo "Total files: $TOTAL, Meaningful: $MEANINGFUL"
           if [ "$MEANINGFUL" -eq 0 ]; then
@@ -51,7 +59,10 @@ jobs:
       github.event.pull_request.draft == false
     uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
     secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # FIX: was ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # The reusable declares secret name LLM_API_KEY — caller must match that name.
+      # Mismatch caused every AI review to fail silently with empty API key.
+      LLM_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: pr-review
