@@ -1,10 +1,19 @@
+# =============================================================================
+# WORKFLOW: Security (caller)
+# PURPOSE:  Triggers org-standard security scans on push and PRs
+# TRIGGERS: pull_request (all branches), push (develop/release/main), schedule
+# SECRETS:  ORG_ADMIN_TOKEN, TRIVY_TEAM_WEBHOOK (inherited)
+# WHY language inputs: _reusable-security.yml gates bandit+CodeQL on python/node
+#   inputs. Without them all defaulting to false, those scans NEVER ran.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: Security
 
 on:
   pull_request:
     branches: [develop, stage, release]
   push:
-    branches: [release]       # full scan only when cutting release
+    branches: [release]
   schedule:
     - cron: '0 3 * * 1'      # weekly Monday 03:00 UTC
   workflow_dispatch:
@@ -18,6 +27,13 @@ permissions:
 jobs:
   scan:
     uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@main
+    with:
+      # FIX: were missing entirely — bandit, CodeQL, and language-specific trivy
+      # never ran because all three inputs defaulted to false in the reusable.
+      # Flip rust: true in repos that have Cargo.toml.
+      python: true
+      node: true
+      rust: false
     secrets:
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
       TRIVY_TEAM_WEBHOOK: ${{ secrets.TRIVY_TEAM_WEBHOOK }}
