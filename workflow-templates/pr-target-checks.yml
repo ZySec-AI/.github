@@ -1,0 +1,48 @@
+# =============================================================================
+# WORKFLOW: PR Target Checks
+# PURPOSE:  Runs pull_request_target checks that need write access:
+#           (1) labels conflicting PRs with 'needs-rebase'
+#           (2) blocks merge if a declared PR dependency isn't merged yet
+# TRIGGERS: pull_request_target (opened, synchronize, reopened, edited)
+# WHY pull_request_target: both actions need write access to label/comment on
+#   PRs from forks. pull_request doesn't grant that. NEVER add checkout here —
+#   pull_request_target + checkout of PR head is a supply-chain attack vector.
+# SKIP:     Apply 'bot-skip' label to suppress both checks on a PR.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: PR Target Checks
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  needs-rebase:
+    name: Check for merge conflicts
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.pull_request.labels.*.name, 'bot-skip')"
+    steps:
+      - name: Label conflicting PRs
+        uses: eps1lon/actions-label-merge-conflict@b8bf8341285ec9a4567d4318ba474fee998a6919  # v2.0.1
+        with:
+          repoToken: "${{ secrets.ORG_ADMIN_TOKEN || github.token }}"
+          dirtyLabel: "needs-rebase"
+          removeOnDirtyLabel: ""
+          commentOnDirty: |
+            ⚠️ This PR has a merge conflict and can no longer be merged automatically.
+            Please rebase onto `${{ github.base_ref }}` and resolve any conflicts.
+          commentOnClean: ""
+
+  check-deps:
+    name: Check PR dependencies are merged
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.pull_request.labels.*.name, 'bot-skip')"
+    steps:
+      - name: Check dependency ordering
+        uses: gregsdennis/dependencies-action@f98d55eee1f66e7aaea4a60e71892736ae2548c7
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
