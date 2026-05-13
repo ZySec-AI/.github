@@ -61,6 +61,10 @@ jobs:
             ["pr-standards.yml"]="PR description + label + milestone validation"
             # Developer education
             ["merge-comment.yml"]="post controls summary + devops-practices links on PR open"
+            # PR hygiene (adopted from ceph/ceph)
+            ["needs-rebase.yml"]="auto-label PRs with merge conflicts"
+            ["check-license.yml"]="block GPL/AGPL/SSPL license text in diff"
+            ["pr-check-deps.yml"]="enforce PR dependency ordering"
           )
 
           # Build sorted list of workflow filenames for fast bulk-check
