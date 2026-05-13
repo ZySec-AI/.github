@@ -1,0 +1,94 @@
+name: License Compatibility Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  check-license:
+    name: Check for incompatible licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Scan diff for incompatible license text
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Copyleft / commercial-hostile licenses incompatible with MIT SaaS products
+          PATTERNS=(
+            "GNU General Public License"
+            "GNU Affero General Public License"
+            "GNU Lesser General Public License"
+            "Server Side Public License"
+            "Commons Clause"
+            "AGPL"
+            "SSPL"
+          )
+
+          DIFF=$(git diff --no-color "$BASE_SHA".."$HEAD_SHA" -- \
+            '*.txt' '*.md' 'LICENSE*' 'LICENCE*' 'COPYING*' 'NOTICE*' \
+            'package.json' 'pyproject.toml' 'Cargo.toml' 'go.mod' \
+            2>/dev/null || echo "")
+
+          FOUND=""
+          for PATTERN in "${PATTERNS[@]}"; do
+            if echo "$DIFF" | grep -qi "$PATTERN"; then
+              FOUND="$FOUND
+- \`$PATTERN\`"
+            fi
+          done
+
+          if [ -n "$FOUND" ]; then
+            echo "::error::Incompatible license text detected in diff"
+            printf "Matched patterns:%b
+" "$FOUND"
+            echo ""
+            echo "ZySec AI projects use MIT license."
+            echo "Copyleft (GPL/AGPL/LGPL) and commercial-hostile (SSPL, Commons Clause) licenses"
+            echo "are incompatible with our SaaS product distribution model."
+            echo ""
+            echo "If this is a false positive (e.g., documenting a 3rd-party tool),"
+            echo "add the 'bot-skip' label to bypass this check."
+            exit 1
+          fi
+
+          echo "✓ No incompatible license text detected in diff"
+
+      - name: Post comment on failure
+        if: failure()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          github-token: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find(c => c.body.includes('<!-- zysec-license-check -->'));
+            const body = `<!-- zysec-license-check -->
+            ⚠️ **License Compatibility Check Failed**
+
+            This PR introduces text matching a copyleft or commercial-hostile license (GPL, AGPL, LGPL, SSPL, Commons Clause).
+
+            ZySec AI uses the MIT License. Adding copyleft-licensed code or dependencies can create legal obligations that conflict with our commercial SaaS model.
+
+            **Actions:**
+            1. Remove or replace the flagged dependency/file with an MIT/Apache/BSD-licensed alternative
+            2. If this is a false positive, add the \`bot-skip\` label to bypass
+
+            > Auto-detected by license compatibility check`;
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
