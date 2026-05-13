@@ -1,0 +1,33 @@
+# =============================================================================
+# WORKFLOW: Post-Merge Audit (Release)
+# PURPOSE:  After any push to release, runs LLM audit on the diff.
+#           Opens labelled issues for HIGH/CRITICAL findings.
+#           Catches regressions that slipped through PR review before tagging.
+# TRIGGERS: push to release branch
+# SECRETS:  ANTHROPIC_API_KEY (mapped to LLM_API_KEY in reusable)
+# WHY release not develop: audit on develop is too noisy (every PR merge).
+#   Release is the last gate before a tag — highest value to catch issues here.
+# SKIP:     Not skippable — this is a post-merge safety net, not a PR gate.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: Post-Merge Audit (Release)
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  audit:
+    name: AI Post-Merge Audit
+    uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
+    secrets:
+      LLM_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+    with:
+      mode: audit
+      fail_on: HIGH   # opens issues for HIGH+CRITICAL; does not block (post-merge)
