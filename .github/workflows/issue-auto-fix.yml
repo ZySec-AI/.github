@@ -1,3 +1,12 @@
+# =============================================================================
+# WORKFLOW: AI Issue Auto-Fix
+# PURPOSE:  When 'bot-fix-please' label is applied to an issue, runs LLM to
+#           attempt an automated fix and open a PR
+# TRIGGERS: issues (labeled)
+# SECRETS:  ANTHROPIC_API_KEY (mapped to LLM_API_KEY in reusable)
+# HOW TO USE: Apply the 'bot-fix-please' label to any issue
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: Issue Auto-Fix
 
 on:
@@ -14,7 +23,8 @@ jobs:
     if: github.event.label.name == 'bot-fix-please'
     uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
     secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # FIX: was ANTHROPIC_API_KEY — reusable expects LLM_API_KEY
+      LLM_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: issue-fix
