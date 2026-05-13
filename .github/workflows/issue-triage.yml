@@ -1,3 +1,12 @@
+# =============================================================================
+# WORKFLOW: AI Issue Triage
+# PURPOSE:  Auto-triages new issues — classifies severity, suggests labels,
+#           posts a triage summary comment
+# TRIGGERS: issues (opened, reopened)
+# SECRETS:  ANTHROPIC_API_KEY (mapped to LLM_API_KEY in reusable)
+# SKIP:     Apply 'bot-skip' or 'bot-reviewed' label to suppress
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: Issue Triage
 
 on:
@@ -16,7 +25,8 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'bot-reviewed')
     uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
     secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # FIX: was ANTHROPIC_API_KEY — reusable expects LLM_API_KEY
+      LLM_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: issue-triage
