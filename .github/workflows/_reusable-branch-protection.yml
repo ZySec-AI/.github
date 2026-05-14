@@ -1,7 +1,24 @@
+# =============================================================================
+# WORKFLOW: Reusable — Branch Protection
+# PURPOSE:  Applies standard ZySec branch protection rules to develop + release
+#           via GitHub API. Safe to call on new repos and as a drift-correction
+#           job (idempotent — PUT replaces existing rules).
+# TRIGGERS: workflow_call
+# SECRETS:  ORG_ADMIN_TOKEN (needs repo admin permission on the target repo)
+# STATUS CHECK NAMES: GitHub reports these as "job-key / Job Name" for
+#   reusable workflow jobs, or just "Job Name" for inline jobs.
+#   Names here must EXACTLY match what GitHub records after the first run.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
 name: enforce branch protection (reusable)
 
 on:
   workflow_call:
+    inputs:
+      repo:
+        type: string
+        default: ''
+        description: 'owner/repo to protect — defaults to github.repository if empty'
     secrets:
       ORG_ADMIN_TOKEN:
         required: true
@@ -14,23 +31,28 @@ jobs:
       - name: Apply protection to develop and release
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          apply_protection() {
-            BRANCH=$1
-            REQUIRED_CHECKS=$2
+          REPO="${{ inputs.repo }}"
+          [ -z "$REPO" ] && REPO="${{ github.repository }}"
 
-            # Check branch exists
-            gh api "/repos/$REPO/branches/$BRANCH" --silent 2>/dev/null || return 0
+          apply_protection() {
+            local BRANCH="$1"
+            local CHECKS_JSON="$2"
+
+            # Skip if branch doesn't exist
+            gh api "/repos/$REPO/branches/$BRANCH" --silent 2>/dev/null || {
+              echo "  ↩ $BRANCH not found — skipping"
+              return 0
+            }
 
             gh api -X PUT "/repos/$REPO/branches/$BRANCH/protection" \
-              --input - <<EOF
+              --input - << PAYLOAD
           {
             "required_status_checks": {
               "strict": true,
-              "contexts": $REQUIRED_CHECKS
+              "contexts": $CHECKS_JSON
             },
             "enforce_admins": false,
             "required_pull_request_reviews": {
@@ -41,14 +63,46 @@ jobs:
             "restrictions": null,
             "allow_force_pushes": false,
             "allow_deletions": false,
-            "required_conversation_resolution": true
+            "required_conversation_resolution": true,
+            "required_linear_history": false
           }
-          EOF
-            echo "✓ Protection applied to $BRANCH"
+          PAYLOAD
+            echo "  ✓ $BRANCH — protection applied"
           }
 
-          # develop: require CI to pass + 1 review
-          apply_protection "develop" '["CI","Quality Gate","Secret Scan (gitleaks)","validate-branch-flow"]'
+          # develop: PR validation + quality gate + secret scan must pass
+          # Status check names: GitHub records reusable jobs as "job-key / Job Name"
+          # and inline jobs as "Job Name" (from the `name:` field in the job).
+          #
+          # From pr-validation.yml (inline jobs):
+          #   "Branch name + merge flow"
+          #   "Validate PR metadata"
+          #
+          # From quality.yml → _reusable-quality.yml (reusable, job key = gates):
+          #   "gates / Quality Gate"
+          #
+          # From security.yml → _reusable-security.yml (reusable, job key = scan):
+          #   "scan / Secret Scan (gitleaks)"
+          #
+          apply_protection "develop" '[
+            "Branch name + merge flow",
+            "Validate PR metadata",
+            "gates / Quality Gate",
+            "scan / Secret Scan (gitleaks)"
+          ]'
 
-          # release: also require qa-approved label check
-          apply_protection "release" '["CI","Quality Gate","Secret Scan (gitleaks)","QA Sign-off Gate"]'
+          # release: same as develop + QA sign-off + AI review blocks on HIGH
+          # From hotfix-security.yml (inline jobs, non-hotfix path):
+          #   "Full Security Gate (non-hotfix)"
+          #   "AI Code Review (blocking on HIGH+)"
+          # From release.yml → _reusable-release.yml:
+          #   "release / QA Sign-off Gate"  (only fires on PRs)
+          #
+          apply_protection "release" '[
+            "Branch name + merge flow",
+            "Validate PR metadata",
+            "gates / Quality Gate",
+            "scan / Secret Scan (gitleaks)",
+            "Full Security Gate (non-hotfix)",
+            "AI Code Review (blocking on HIGH+)"
+          ]'
