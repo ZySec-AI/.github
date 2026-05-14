@@ -1,0 +1,36 @@
+# =============================================================================
+# WORKFLOW: Docs to Wiki
+# PURPOSE:  Syncs docs/ directory to the GitHub Wiki on every push that
+#           touches documentation files.
+# TRIGGERS: push to develop (docs/** changed), workflow_dispatch
+# WHY develop not main: docs live on develop; wiki should reflect current
+#   state of the default branch, not only tagged releases.
+# SKIP:     If docs/ directory doesn't exist, the reusable skips gracefully.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: Docs to Wiki
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview changes without pushing to wiki'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    uses: ZySec-AI/.github/.github/workflows/_reusable-docs-to-wiki.yml@main
+    with:
+      docs_path: docs
+      wiki_files: 'README.md,product.md,architecture.md,technology.md,implementation.md,api.md'
+      generate_sidebar: true
+      dry_run: ${{ inputs.dry_run || false }}
