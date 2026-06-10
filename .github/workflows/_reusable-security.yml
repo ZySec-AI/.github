@@ -1,12 +1,13 @@
 # =============================================================================
-# WORKFLOW: Reusable — Security Scanning
+# WORKFLOW: Reusable - Security Scanning
 # PURPOSE:  Runs gitleaks secret scan, bandit SAST, CodeQL, dependency-review,
-#           and trivy filesystem + container scans
+#           trivy filesystem + container scans, and auto-opens GitHub issues
+#           for HIGH/CRITICAL findings on non-PR runs (push/schedule).
 # TRIGGERS: workflow_call
 # INPUTS:   python (bool, default true), node (bool, default true),
 #           rust (bool, default false), fast-mode (bool, default false)
 # SECRETS:  ORG_ADMIN_TOKEN, TRIVY_TEAM_WEBHOOK (optional)
-# WHY fast-mode: hotfix path needs < 5min; skips CodeQL (slow) but keeps
+# WHY fast-mode: hotfix path needs <5min; skips CodeQL (slow) but keeps
 #                gitleaks + trivy (fast, highest-value for hotfixes)
 # CONTACT:  platform-eng@zysec.ai
 # =============================================================================
@@ -18,11 +19,11 @@ on:
       python:
         description: 'Enable Python-specific scans (bandit, CodeQL python)'
         type: boolean
-        default: true          # was false — means bandit/CodeQL never ran
+        default: true
       node:
         description: 'Enable Node-specific scans (CodeQL javascript)'
         type: boolean
-        default: true          # was false
+        default: true
       rust:
         description: 'Enable Rust-specific scans'
         type: boolean
@@ -34,13 +35,15 @@ on:
         type: string
         default: ''
       fast-mode:
-        description: 'Skip slow scans (CodeQL, bandit) — used by hotfix fast-path'
+        description: 'Skip slow scans (CodeQL, bandit) - used by hotfix fast-path'
         type: boolean
         default: false
     secrets:
       ORG_ADMIN_TOKEN:
         required: true
       TRIVY_TEAM_WEBHOOK:
+        required: false
+      GITLEAKS_LICENSE:
         required: false
 
 jobs:
@@ -54,18 +57,15 @@ jobs:
         with:
           fetch-depth: 0
       - name: Run gitleaks
-        # PINNED: was gitleaks/gitleaks-action@v2 (mutable tag)
-        # If this fails: a secret was found in the diff. Run gitleaks locally:
-        #   brew install gitleaks && gitleaks detect --source .
-        uses: gitleaks/gitleaks-action@44c470e531f84e7b3946e6e6326d54d5dfece8d5  # v2.3.4
+        # v2.3.3 is the last free version; v2.3.4+ requires a paid license
+        # for private repos. If you have a license, upgrade and set
+        # GITLEAKS_LICENSE as an org secret.
+        uses: gitleaks/gitleaks-action@cb7149a9b57195b609c63e8518d2c6056677d2d0  # v2.3.3
         env:
           GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-        # REMOVED: continue-on-error: true — secret leaks must block merge
 
   sast-python:
-    name: SAST — bandit (Python)
-    # Skip in fast-mode (hotfix path) — saves ~3 min
+    name: SAST - bandit (Python)
     if: inputs.python && !inputs.fast-mode
     runs-on: ubuntu-latest
     permissions:
@@ -78,36 +78,26 @@ jobs:
           python-version: '3.12'
       - name: Install bandit
         run: pip install bandit[toml]
-      - name: Run bandit (SARIF output for Security tab)
+      - name: Run bandit (SARIF output)
         run: |
           bandit -r . \
             --exclude './.venv,./venv,./node_modules,./tests,./test' \
-            -ll \
-            -f sarif \
-            -o bandit.sarif || true
-      - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f  # v3.28.18
+            -ll -f sarif -o bandit.sarif || true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
         if: always()
         with:
           sarif_file: bandit.sarif
           category: bandit
       - name: Fail on HIGH/CRITICAL findings
-        # Re-run without SARIF to get clean exit code
-        # If this fails: bandit found a HIGH/CRITICAL issue. Check Security tab
-        # for details or run: bandit -r . -lll
         run: |
           bandit -r . \
             --exclude './.venv,./venv,./node_modules,./tests,./test' \
-            -lll \
-            -f txt
+            -lll -f txt
 
   sast-codeql:
-    name: SAST — CodeQL
-    # Skip in fast-mode (CodeQL takes 10-20 min — too slow for hotfix path)
+    name: SAST - CodeQL
     if: (inputs.python || inputs.node) && !inputs.fast-mode
-    # REMOVED: && github.event_name != 'pull_request'
-    # WHY REMOVED: CodeQL should run on PRs so findings surface before merge,
-    # not after. The original exclusion meant vulns only appeared post-merge.
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -123,12 +113,12 @@ jobs:
           '[]') }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - uses: github/codeql-action/init@ff0a06e83cb2de871e5a09832bc6a81e7276941f  # v3.28.18
+      - uses: github/codeql-action/init@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
         with:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
-      - uses: github/codeql-action/autobuild@ff0a06e83cb2de871e5a09832bc6a81e7276941f  # v3.28.18
-      - uses: github/codeql-action/analyze@ff0a06e83cb2de871e5a09832bc6a81e7276941f  # v3.28.18
+      - uses: github/codeql-action/autobuild@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
+      - uses: github/codeql-action/analyze@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -141,7 +131,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - uses: actions/dependency-review-action@da24556e06b3e2a6ba83fa51aef0e0c38e2ad742  # v4.7.1
+      - uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9  # v4.7.1
         with:
           fail-on-severity: high
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0
@@ -149,7 +139,7 @@ jobs:
         continue-on-error: true
 
   trivy-fs:
-    name: Trivy — filesystem scan
+    name: Trivy - filesystem scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -157,10 +147,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Run Trivy (filesystem)
-        # PINNED: was aquasecurity/trivy-action@master (floating branch — supply chain risk)
-        # If this fails: Trivy found HIGH/CRITICAL CVEs. Check Security tab or run:
-        #   trivy fs --severity HIGH,CRITICAL .
-        uses: aquasecurity/trivy-action@a20de5420d57c4102486cdd9349b532bf5b3c8e7  # v0.28.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -168,14 +155,14 @@ jobs:
           severity: HIGH,CRITICAL
           format: sarif
           output: trivy-fs.sarif
-      - uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f  # v3.28.18
+      - uses: github/codeql-action/upload-sarif@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
         if: always()
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
 
   trivy-image:
-    name: Trivy — container image scan
+    name: Trivy - container image scan
     if: inputs.docker && inputs.image_ref != ''
     runs-on: ubuntu-latest
     permissions:
@@ -184,14 +171,14 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Run Trivy (image)
-        uses: aquasecurity/trivy-action@a20de5420d57c4102486cdd9349b532bf5b3c8e7  # v0.28.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
           image-ref: ${{ inputs.image_ref }}
           ignore-unfixed: true
           severity: HIGH,CRITICAL
           format: sarif
           output: trivy-image.sarif
-      - uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f  # v3.28.18
+      - uses: github/codeql-action/upload-sarif@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
         if: always()
         with:
           sarif_file: trivy-image.sarif
