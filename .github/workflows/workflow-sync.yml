@@ -1,0 +1,163 @@
+# =============================================================================
+# WORKFLOW: Workflow Sync (org-wide)
+# PURPOSE:  Daily sync of security.yml and quality.yml wrapper files from
+#           canonical templates in this repo. Opens PRs for repos with drift.
+# TRIGGER:  Daily at 07:17 UTC (after CI Failure Monitor at 06:17)
+#           Or manual dispatch
+# TEMPLATES: .github/workflow-templates/security.yml
+#            .github/workflow-templates/quality.yml
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: Workflow Sync
+
+on:
+  schedule:
+    - cron: '17 7 * * *'  # daily 07:17 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (log but do not create PRs)'
+        type: boolean
+        default: false
+      repos:
+        description: 'Comma-separated list of repos (default: all non-archived)'
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  list-repos:
+    name: Discover repos
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.repos.outputs.repos }}
+    steps:
+      - name: List repos
+        id: repos
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.repos }}" ]; then
+            REPOS=$(echo "${{ inputs.repos }}" | tr ',' '\n' | jq -R . | jq -s -c .)
+          else
+            REPOS=$(gh api "orgs/${{ github.repository_owner }}/repos" \
+              --paginate --jq '.[] | select(.archived == false) | select(.name != ".github") | .name' \
+              | jq -R . | jq -s -c .)
+          fi
+          echo "repos=$REPOS" >> "$GITHUB_OUTPUT"
+          echo "Found $(echo "$REPOS" | jq 'length') repos"
+
+  sync:
+    name: Sync ${{ matrix.repo }}
+    needs: list-repos
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        repo: ${{ fromJson(needs.list-repos.outputs.repos) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: templates
+
+      - name: Clone target repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository_owner }}/${{ matrix.repo }}.git" target
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check for drift
+        id: drift
+        run: |
+          DRIFT=false
+
+          for template in security.yml quality.yml; do
+            TEMPLATE_PATH="templates/.github/workflow-templates/$template"
+            TARGET_PATH="target/.github/workflows/$template"
+
+            [ ! -f "$TEMPLATE_PATH" ] && continue
+            [ ! -f "$TARGET_PATH" ] && continue
+
+            if ! diff -q "$TEMPLATE_PATH" "$TARGET_PATH" >/dev/null 2>&1; then
+              echo "DRIFT detected in $template"
+              DRIFT=true
+            fi
+          done
+
+          echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
+
+      - name: Create sync PR
+        if: steps.drift.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          cd target
+          BRANCH="ci/sync-workflow-templates-$(date +%Y%m%d)"
+          git checkout -b "$BRANCH"
+
+          # Copy templates
+          for template in security.yml quality.yml; do
+            TEMPLATE_PATH="../templates/.github/workflow-templates/$template"
+            TARGET_PATH=".github/workflows/$template"
+            [ -f "$TEMPLATE_PATH" ] && [ -f "$TARGET_PATH" ] && cp "$TEMPLATE_PATH" "$TARGET_PATH"
+          done
+
+          git add .github/workflows/
+          git diff --cached --quiet && { echo "No actual changes"; exit 0; }
+
+          git commit -m "chore(ci): sync workflow templates from .github org repo
+
+Auto-synced by Workflow Sync workflow.
+Templates: .github/workflow-templates/{security,quality}.yml"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN: would push branch $BRANCH and create PR"
+            git diff HEAD~1 --stat
+            exit 0
+          fi
+
+          git push -u origin "$BRANCH"
+
+          # Check for existing open PR
+          EXISTING=$(gh pr list --state open --head "$BRANCH" --json number -q '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already open"
+            exit 0
+          fi
+
+          gh pr create \
+            --base develop \
+            --head "$BRANCH" \
+            --title "chore(ci): sync workflow templates from .github org repo" \
+            --body "## Auto-synced workflow templates
+
+This PR updates \`security.yml\` and \`quality.yml\` to match the canonical
+templates in the \`.github\` org repo.
+
+### What changed
+- Path filtering (skip docs/workflow-only changes)
+- Fast-mode security on develop (skip CodeQL)
+- Centralized reusable workflow references
+
+### Why
+Workflow templates are maintained centrally in \`ZySec-AI/.github\`.
+This PR syncs the thin wrapper files to the latest version.
+
+Auto-created by [Workflow Sync](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})." \
+            --label "ci,cleanup" 2>/dev/null || \
+          gh pr create \
+            --base develop \
+            --head "$BRANCH" \
+            --title "chore(ci): sync workflow templates from .github org repo" \
+            --body "Auto-synced workflow templates from .github org repo." 2>&1
+
+          echo "PR created for ${{ matrix.repo }}"
