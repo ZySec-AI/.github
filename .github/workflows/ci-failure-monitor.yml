@@ -1,0 +1,215 @@
+# =============================================================================
+# WORKFLOW: CI Failure Monitor (org-wide)
+# PURPOSE:  Runs every 24 hours across all org repos. Finds failed workflow
+#           runs from the last 24h and opens a GitHub issue per failure in
+#           the affected repo. Assigns the owner from the repo variable
+#           CI_FAILURE_OWNER (falls back to the last committer on the branch).
+# OWNER:    Set per-repo: Settings > Secrets and variables > Actions > Variables
+#           -> New repository variable -> Name: CI_FAILURE_OWNER, Value: @github-login
+#           Or set an org variable for a global default (e.g. DevOps lead).
+#           If neither is set, the last committer on the failed branch is assigned.
+# LABEL:    Issues are tagged `ci-failure` for tracking/filtering.
+# DEDUP:    If an open issue already exists for the same workflow + SHA, skip.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: CI Failure Monitor
+
+on:
+  schedule:
+    - cron: '17 6 * * *'   # daily 06:17 UTC (off-peak, off-round-hour)
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: 'Hours to look back for failures'
+        type: number
+        default: 24
+      dry_run:
+        description: 'Dry run (log issues but do not create)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  list-repos:
+    name: Discover org repos
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.repos.outputs.repos }}
+    steps:
+      - name: List active non-archived repos
+        id: repos
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPOS=$(gh api "orgs/${{ github.repository_owner }}/repos" \
+            --paginate --jq '.[] | select(.archived == false) | .name' \
+            | jq -R . | jq -s -c .)
+          echo "repos=$REPOS" >> "$GITHUB_OUTPUT"
+          echo "Found $(echo "$REPOS" | jq 'length') repos"
+
+  scan:
+    name: Scan ${{ matrix.repo }}
+    needs: list-repos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        repo: ${{ fromJson(needs.list-repos.outputs.repos) }}
+    steps:
+      - name: Resolve owner
+        id: owner
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OWNER=""
+
+          # 1. Repo variable CI_FAILURE_OWNER (preferred)
+          REPO_VAR=$(gh api "repos/${{ github.repository_owner }}/${{ matrix.repo }}/actions/variables" \
+            --jq '.variables[]? | select(.name == "CI_FAILURE_OWNER") | .value' 2>/dev/null || true)
+          if [ -n "$REPO_VAR" ]; then
+            OWNER="$REPO_VAR"
+            echo "Owner from repo variable: $OWNER"
+          fi
+
+          # 2. Org variable CI_FAILURE_OWNER (fallback)
+          if [ -z "$OWNER" ]; then
+            ORG_VAR=$(gh api "orgs/${{ github.repository_owner }}/actions/variables" \
+              --jq '.variables[]? | select(.name == "CI_FAILURE_OWNER") | .value' 2>/dev/null || true)
+            if [ -n "$ORG_VAR" ]; then
+              OWNER="$ORG_VAR"
+              echo "Owner from org variable: $OWNER"
+            fi
+          fi
+
+          # 3. Last committer on default branch (final fallback)
+          if [ -z "$OWNER" ]; then
+            OWNER=$(gh api "repos/${{ github.repository_owner }}/${{ matrix.repo }}/commits?per_page=1" \
+              --jq '.[0].author.login // .[0].commit.author.name' 2>/dev/null || true)
+            echo "Owner from last commit: $OWNER"
+          fi
+
+          # Normalize: strip leading @ if present
+          OWNER="${OWNER#@}"
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
+
+      - name: Find failed runs
+        id: failures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LOOKBACK=${{ inputs.lookback_hours || 24 }}
+          SINCE=$(date -u -d "-${LOOKBACK} hours" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+            || date -u -v-${LOOKBACK}H +%Y-%m-%dT%H:%M:%SZ)
+          echo "Looking back to $SINCE"
+
+          FAILURES=$(gh api "repos/${{ github.repository_owner }}/${{ matrix.repo }}/actions/runs" \
+            --method GET \
+            -f status=failure \
+            -f created=">=$SINCE" \
+            -f per_page=100 \
+            --jq '.workflow_runs[] | {
+              id: .id,
+              name: .name,
+              branch: .head_branch,
+              sha: .head_sha,
+              url: .html_url,
+              created_at: .created_at,
+              event: .event
+            }' 2>/dev/null || true)
+
+          if [ -z "$FAILURES" ]; then
+            echo "No failures found"
+            echo 'runs=[]' >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(echo "$FAILURES" | jq -s -c .)
+            echo "runs=$JSON" >> "$GITHUB_OUTPUT"
+            echo "Found $(echo "$JSON" | jq 'length') failed runs"
+          fi
+
+      - name: Create issues for failures
+        if: steps.failures.outputs.runs != '[]' && steps.failures.outputs.runs != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          OWNER="${{ steps.owner.outputs.owner }}"
+          REPO="${{ github.repository_owner }}/${{ matrix.repo }}"
+
+          echo "${{ steps.failures.outputs.runs }}" | jq -c '.[]' | while IFS= read -r run; do
+            RUN_ID=$(echo "$run" | jq -r '.id')
+            NAME=$(echo "$run" | jq -r '.name')
+            BRANCH=$(echo "$run" | jq -r '.branch')
+            SHA=$(echo "$run" | jq -r '.sha' | cut -c1-7)
+            URL=$(echo "$run" | jq -r '.url')
+            CREATED=$(echo "$run" | jq -r '.created_at')
+            EVENT=$(echo "$run" | jq -r '.event')
+
+            TITLE="CI failure: $NAME on $BRANCH ($SHA)"
+
+            # Dedup: skip if open issue with same title prefix exists
+            EXISTING=$(gh issue list -R "$REPO" \
+              --search "in:title \"$TITLE\"" \
+              --state open --json number --jq 'length' 2>/dev/null || echo "0")
+
+            if [ "$EXISTING" -gt 0 ]; then
+              echo "SKIP: open issue already exists for '$TITLE'"
+              continue
+            fi
+
+            MONITOR_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            BODY_FILE=$(mktemp)
+            {
+              echo "## CI Failure detected"
+              echo ""
+              echo "**Workflow:** \`$NAME\`"
+              echo "**Branch:** \`$BRANCH\`"
+              echo "**Commit:** \`$SHA\`"
+              echo "**Event:** \`$EVENT\`"
+              echo "**Failed at:** $CREATED"
+              echo "**Run URL:** [$RUN_ID]($URL)"
+              echo ""
+              echo "### Next steps"
+              echo ""
+              echo "1. Open the [run log]($URL) and inspect the failed job/step."
+              echo "2. Fix the root cause and push a fix to \`$BRANCH\`."
+              echo "3. Close this issue once the workflow passes."
+              echo ""
+              echo "*Auto-created by [CI Failure Monitor]($MONITOR_URL).*"
+            } > "$BODY_FILE"
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY RUN: would create issue '$TITLE' in $REPO, assignee: $OWNER"
+              continue
+            fi
+
+            ASSIGN_FLAG=""
+            if [ -n "$OWNER" ]; then
+              ASSIGN_FLAG="--assignee $OWNER"
+            fi
+
+            # Ensure ci-failure label exists (ignore error if it already does)
+            gh label create "ci-failure" -R "$REPO" \
+              --description "Auto-detected CI workflow failure" \
+              --color "D93F0B" 2>/dev/null || true
+
+            if ! gh issue create -R "$REPO" \
+              --title "$TITLE" \
+              --body-file "$BODY_FILE" \
+              --label "ci-failure" \
+              $ASSIGN_FLAG 2>&1; then
+              # Retry without label/assignee in case of permission issues
+              gh issue create -R "$REPO" \
+                --title "$TITLE" \
+                --body-file "$BODY_FILE" 2>&1 || echo "WARN: failed to create issue for $TITLE"
+            fi
+
+            rm -f "$BODY_FILE"
+
+            echo "Created issue: $TITLE"
+          done
