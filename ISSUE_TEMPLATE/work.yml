@@ -1,0 +1,151 @@
+name: Work
+description: Feature, task, spec, chore, tech-debt, docs, infra, or test work.
+title: "<short title>"
+labels: ["status:planned"]
+body:
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: Work type
+      description: Pick the closest match. This determines the `type:*` label applied.
+      options:
+        - feature
+        - task
+        - spec
+        - chore
+        - tech-debt
+        - docs
+        - infra
+        - test
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Metadata
+        Fill the table below. Every field helps the next developer or agent pick this up without guessing.
+
+  - type: input
+    id: parent
+    attributes:
+      label: Parent issue
+      description: Link to parent epic or app issue (e.g. `#123` or `ZySec-AI/cpod-backend#456`).
+      placeholder: "#123"
+
+  - type: input
+    id: repo
+    attributes:
+      label: Target repo
+      description: Which repo owns this work.
+      placeholder: cpod-backend
+    validations:
+      required: true
+
+  - type: input
+    id: module
+    attributes:
+      label: Module / component
+      description: Logical module or component name within the repo.
+      placeholder: auth/middleware
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p0-critical
+        - p1-high
+        - p2-normal
+        - p3-low
+    validations:
+      required: true
+
+  - type: input
+    id: due_date
+    attributes:
+      label: Due date
+      description: Target completion date (YYYY-MM-DD). Leave blank if unbounded.
+      placeholder: "2026-07-01"
+
+  - type: input
+    id: owner
+    attributes:
+      label: Owner
+      description: GitHub handle of the assignee.
+      placeholder: "@username"
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What this work accomplishes and why it matters. One paragraph.
+    validations:
+      required: true
+
+  - type: textarea
+    id: code_paths
+    attributes:
+      label: Code paths
+      description: Files or directories expected to change. Helps the next developer scope the work.
+      placeholder: |
+        | Path | Purpose | Expected change |
+        |------|---------|-----------------|
+        | `app/auth/middleware.py` | JWT validation | Add RS256 support |
+        | `app/shared/sdk.py` | Sidecar client | Update validation call |
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Shared references, SDK/EDM impact, permissions, design docs, or anything the implementer needs to know. Omit sections that don't apply.
+      placeholder: |
+        **Shared references**
+        - `shared/design-system/...`
+        - SDK docs: https://docs.cyberpod.app/portal/explore
+
+        **SDK / EDM impact**
+        | Domain | Read/Write | Purpose |
+        |--------|-----------|---------|
+
+        **Permissions**
+        | Permission | Reason |
+        |------------|--------|
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Cross-repo blockers or prerequisite issues. Use `org/repo#N` format for cross-repo links.
+      placeholder: |
+        - [ ] ZySec-AI/core-sdk#151 — RS256 signing support
+        - [ ] #200 — Auth middleware refactor (this repo)
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Commands to run and acceptance criteria. The implementer must be able to verify the work is done.
+      placeholder: |
+        **Commands**
+        ```bash
+        uv run ruff check . && uv run ruff format --check .
+        uv run pytest tests/test_auth/
+        ```
+
+        **Acceptance criteria**
+        - [ ] RS256 tokens validated against sidecar
+        - [ ] Existing HS256 tests still pass
+        - [ ] New integration test covers RS256 flow
+
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: What this issue explicitly does NOT cover. Prevents scope creep.
+      placeholder: |
+        - Does not change the control plane signing config
+        - Does not migrate existing HS256 tokens

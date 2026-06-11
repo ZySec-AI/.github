@@ -1,0 +1,139 @@
+name: Bug
+description: Something is broken, regressed, or behaves unexpectedly.
+title: "Bug: <short description>"
+labels: ["type:bug", "status:planned"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Metadata
+
+  - type: input
+    id: parent
+    attributes:
+      label: Parent issue
+      description: Link to parent epic or feature issue if this bug was found during larger work.
+      placeholder: "#123"
+
+  - type: input
+    id: repo
+    attributes:
+      label: Affected repo
+      placeholder: cpod-backend
+    validations:
+      required: true
+
+  - type: input
+    id: module
+    attributes:
+      label: Module / component
+      placeholder: chat/streaming
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - critical
+        - high
+        - medium
+        - low
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p0-critical
+        - p1-high
+        - p2-normal
+        - p3-low
+    validations:
+      required: true
+
+  - type: input
+    id: due_date
+    attributes:
+      label: Due date
+      description: Target fix date for critical/high severity. Leave blank otherwise.
+      placeholder: "2026-07-01"
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken. One paragraph.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps to trigger the bug. Include environment, request payload, config, etc.
+      placeholder: |
+        1. Start backend with `uvicorn app.main:app --reload`
+        2. POST `/api/v1/chat/completions` with multi-agent mode
+        3. SSE stream disconnects after second agent completes
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happens. Include error messages, stack traces, or logs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: code_paths
+    attributes:
+      label: Suspected code paths
+      description: Files or modules likely involved. Helps triage and assignment.
+      placeholder: |
+        | Path | Why suspected |
+        |------|---------------|
+        | `app/chat/handlers/runner.py` | SSE stream teardown logic |
+        | `app/shared/event_bus.py` | Queue unsubscribe on disconnect |
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Runtime context where the bug occurs.
+      placeholder: |
+        - OS: macOS 15.5
+        - Python: 3.12.4
+        - Deployment: local dev (`uvicorn --reload`)
+        - Branch: develop
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies / related issues
+      description: Cross-repo bugs or prerequisite issues that may be related.
+      placeholder: |
+        - ZySec-AI/core-sdk#200 — sidecar drops SSE after 30s
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: How to verify the fix works once applied.
+      placeholder: |
+        ```bash
+        uv run pytest tests/test_chat/test_streaming.py -v
+        ```
+        - [ ] SSE stream completes for all agents
+        - [ ] Disconnect mid-stream doesn't leave orphaned queues

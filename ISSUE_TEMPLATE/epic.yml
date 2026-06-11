@@ -1,0 +1,97 @@
+name: Epic
+description: Cross-cutting initiative spanning multiple repos, milestones, or teams.
+title: "Epic: <initiative name>"
+labels: ["type:epic", "status:planned"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Epics track a larger body of work across multiple child issues. Each child issue must be self-contained and independently actionable — link back to this epic but don't require reading it.
+
+  - type: input
+    id: owner
+    attributes:
+      label: Owner
+      placeholder: "@username"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p0-critical
+        - p1-high
+        - p2-normal
+        - p3-low
+    validations:
+      required: true
+
+  - type: input
+    id: due_date
+    attributes:
+      label: Target date
+      description: Target completion for the full epic (YYYY-MM-DD).
+      placeholder: "2026-08-01"
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What this epic delivers and why it matters. Two to three paragraphs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Which repos and modules are affected.
+      placeholder: |
+        | Repo | Module | What changes |
+        |------|--------|-------------|
+        | core-sdk | jwt | RS256 signing |
+        | cpod-backend | auth | RS256 validation |
+        | cpod-ui | auth | Token refresh flow |
+    validations:
+      required: true
+
+  - type: textarea
+    id: child_issues
+    attributes:
+      label: Child issues
+      description: Track all sub-issues here. Use GitHub sub-issues when available. Each child must be self-contained with its own parent link back to this epic.
+      placeholder: |
+        - [ ] ZySec-AI/core-sdk#151 — RS256 signing implementation
+        - [ ] ZySec-AI/cpod-backend#200 — Auth middleware RS256 support
+        - [ ] ZySec-AI/cpod-ui#300 — Token refresh UI update
+
+  - type: textarea
+    id: dependency_graph
+    attributes:
+      label: Dependency graph
+      description: Show which child issues depend on others. Helps with sequencing.
+      placeholder: |
+        ```
+        core-sdk#151 (signing)
+          └─→ cpod-backend#200 (validation)
+                └─→ cpod-ui#300 (refresh UI)
+        ```
+
+  - type: textarea
+    id: success_criteria
+    attributes:
+      label: Success criteria
+      description: What must be true when the full epic is done.
+      placeholder: |
+        - [ ] All services validate RS256 tokens
+        - [ ] HS256 tokens fully migrated
+        - [ ] Integration tests pass end-to-end
+        - [ ] Migration guide published
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: What this epic explicitly does NOT cover.

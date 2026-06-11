@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: CyberPod SDK docs
+    url: https://docs.cyberpod.app/portal/explore
+    about: EDM, SDK, and API reference.
+  - name: CyberPod auth docs
+    url: https://docs.cyberpod.app/portal/auth
+    about: Auth flows, OIDC, and permissions reference.
+  - name: Ticket taxonomy guide
+    url: https://github.com/ZySec-AI/.github/blob/develop/TICKET_TAXONOMY.md
+    about: How to write issues — types, labels, required fields, and examples.
