@@ -74,11 +74,8 @@ jobs:
             --jq '.[] | select(.title | startswith("00")) | .number' 2>/dev/null | head -1 || echo "")
           [ -n "$MILESTONE" ] && gh api -X PATCH /repos/$REPO/pulls/$PR -f milestone=$MILESTONE >/dev/null 2>&1 || true
 
-          gh pr comment $PR --repo $REPO \
-            --body "🚨 **Hotfix detected** — fast-track rules apply:
-          - Requires 1 expedited review (target: 1 hour)
-          - Bypasses code freeze
-          - Will be merged directly to \`release\` after approval" \
+          gh pr comment "$PR" --repo "$REPO" \
+            --body $'🚨 **Hotfix detected** — fast-track rules apply:\n- Requires 1 expedited review (target: 1 hour)\n- Bypasses code freeze\n- Will be merged directly to `release` after approval' \
             2>/dev/null || true
 
           echo "✓ hotfix fast-track applied"

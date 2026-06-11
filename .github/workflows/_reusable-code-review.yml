@@ -49,11 +49,11 @@ jobs:
           PROVIDER=$(echo "${LLM_PROVIDER:-custom}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
           if [ -z "$BASE_URL" ]; then
-            echo "❌ LLM_BASE_URL org secret is required (e.g. https://api.z.ai/api/anthropic)" >&2
+            echo "❌ LLM_BASE_URL org secret is required" >&2
             exit 1
           fi
           if [ -z "$MODEL" ]; then
-            echo "❌ LLM_MODEL org secret is required (e.g. glm-5.1, MiniMax-M2.7, anthropic/claude-sonnet-4)" >&2
+            echo "❌ LLM_MODEL org secret is required" >&2
             exit 1
           fi
 
@@ -103,6 +103,50 @@ jobs:
           ref: develop
           path: .code-reviewer
           token: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+
+      - name: Prepare code-reviewer for proxy endpoints
+        run: |
+          # Claude Code --model validates against Anthropic model IDs before
+          # calling ANTHROPIC_BASE_URL. For proxy endpoints, use env vars only.
+          sed -i 's/\[ -n "${ANTHROPIC_DEFAULT_SONNET_MODEL:-}" \] && model_arg=(--model "$ANTHROPIC_DEFAULT_SONNET_MODEL")/model_arg=() # env-only for proxy/' \
+            .code-reviewer/scripts/entrypoint.sh
+
+      - name: Preflight LLM endpoint
+        continue-on-error: ${{ inputs.fail_on == 'NEVER' }}
+        env:
+          ANTHROPIC_BASE_URL: ${{ steps.provider.outputs.base_url }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ steps.provider.outputs.model }}
+        run: |
+          set -euo pipefail
+          BASE="${ANTHROPIC_BASE_URL%/}"
+          PAYLOAD="{\"model\":\"$LLM_MODEL\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}"
+          echo "Preflight: POST $BASE/v1/messages model=$LLM_MODEL"
+          try_auth() {
+            local header_name="$1"
+            local header_value="$2"
+            curl -sS -o /tmp/llm-preflight.json -w '%{http_code}' \
+              -X POST "$BASE/v1/messages" \
+              -H "content-type: application/json" \
+              -H "$header_name: $header_value" \
+              -H "anthropic-version: 2023-06-01" \
+              -d "$PAYLOAD"
+          }
+          HTTP=$(try_auth "x-api-key" "$ANTHROPIC_AUTH_TOKEN") || HTTP=000
+          if [ "$HTTP" -ge 200 ] && [ "$HTTP" -lt 300 ]; then
+            echo "✓ LLM endpoint accepted model (HTTP $HTTP)"
+            exit 0
+          fi
+          HTTP=$(try_auth "Authorization" "Bearer $ANTHROPIC_AUTH_TOKEN") || HTTP=000
+          if [ "$HTTP" -ge 200 ] && [ "$HTTP" -lt 300 ]; then
+            echo "✓ LLM endpoint accepted model (HTTP $HTTP)"
+            exit 0
+          fi
+          echo "❌ LLM preflight failed (HTTP ${HTTP:-none})" >&2
+          head -c 500 /tmp/llm-preflight.json >&2 || true
+          echo "" >&2
+          echo "Check org secrets: LLM_BASE_URL + LLM_MODEL + LLM_API_KEY must match the same provider." >&2
+          exit 1
 
       - name: Run code reviewer
         continue-on-error: ${{ inputs.fail_on == 'NEVER' }}

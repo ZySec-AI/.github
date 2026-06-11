@@ -240,10 +240,9 @@ jobs:
           fi
 
           SYNCED="${{ steps.sync.outputs.synced }}"
-          git commit -m "docs: sync wiki from docs/ [$(date -u +%Y-%m-%d)]
-
-          Synced:$SYNCED
-          Source: ${{ github.repository }}@${{ github.sha }}"
+          git commit \
+            -m "docs: sync wiki from docs/ [$(date -u +%Y-%m-%d)]" \
+            -m "Synced: $SYNCED | Source: ${{ github.repository }}@${{ github.sha }}"
 
           git push origin HEAD:master || git push origin HEAD:main
           echo "::notice::Wiki updated successfully"
