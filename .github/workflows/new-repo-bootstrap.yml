@@ -43,33 +43,25 @@ jobs:
           REPOS=$(gh api --paginate /orgs/ZySec-AI/repos \
             --jq '.[] | select(.archived==false) | .name')
 
-          # All workflow templates that must exist in every repo.
-          # bootstrap installs missing ones — never overwrites existing.
+          # Standard workflow templates — must match workflow-templates/ in this repo.
+          # Bootstrap installs missing ones only; never overwrites existing.
           declare -A WORKFLOWS=(
-            # AI-assisted review & triage
-            ["develop-pr-automation.yml"]="AI PR review + merge comment on develop PRs"
-            ["issue-triage.yml"]="AI issue triage on opened/edited"
-            ["issue-auto-fix.yml"]="AI auto-fix on bot-fix-please / auto-fixable label"
-            # Branch & merge standards + PR validation (merged)
-            ["pr-validation.yml"]="branch naming + merge flow + PR metadata validation"
-            # PR hygiene — pull_request_target (merged)
-            ["pr-target-checks.yml"]="needs-rebase label + PR dependency ordering"
-            # Security
-            ["security.yml"]="secret scan + SAST + trivy + dep-review"
-            ["hotfix-security.yml"]="full security gate + AI review for release PRs"
-            # Quality gates
-            ["quality.yml"]="lint + type-check + coverage 80%"
-            # Release management
-            ["release.yml"]="QA gate + GitHub Release + Teams notification"
-            ["audit-release.yml"]="post-merge AI audit on release branch"
-            # Sprint process
-            ["sprint-retro.yml"]="weekly sprint retro summary issue"
-            # License check
+            ["quality.yml"]="lint + type-check + coverage (org reusable)"
+            ["security.yml"]="gitleaks + SAST + trivy + dep-review (org reusable)"
+            ["hotfix-security.yml"]="fast/full security gate on release PRs"
             ["check-license.yml"]="block GPL/AGPL/SSPL license text in diff"
-            # Security findings backlog
-            ["security-findings-to-issues.yml"]="open GitHub issues for CVE findings"
-            # Docs sync
-            ["docs-to-wiki.yml"]="sync docs/ to GitHub Wiki on develop push"
+            ["release.yml"]="QA gate + GitHub Release + Teams notification"
+            ["code-review.yml"]="post-merge AI audit on develop"
+            ["code-review-pr.yml"]="AI PR review on develop PRs"
+            ["issue-triage.yml"]="AI issue triage on opened/reopened"
+            ["issue-auto-fix.yml"]="AI auto-fix on bot-fix-please label"
+            ["branch-flow-check.yml"]="branch naming + merge flow validation"
+            ["pr-standards.yml"]="PR description + type label validation"
+            ["merge-comment.yml"]="PR checklist comment on develop PRs"
+            ["stale.yml"]="stale PR/issue notifier"
+            ["code-freeze.yml"]="weekly code freeze reminders"
+            ["sprint-retro.yml"]="weekly sprint retro issue"
+            ["docs-to-wiki.yml"]="sync docs/ to GitHub Wiki"
           )
 
           apply_branch_protection() {
@@ -88,7 +80,7 @@ jobs:
               "contexts": [
                 "Branch name + merge flow",
                 "Validate PR metadata",
-                "gates / Quality Gate",
+                "quality / Quality Gate",
                 "scan / Secret Scan (gitleaks)"
               ]
             },
@@ -119,7 +111,7 @@ jobs:
               "contexts": [
                 "Branch name + merge flow",
                 "Validate PR metadata",
-                "gates / Quality Gate",
+                "quality / Quality Gate",
                 "scan / Secret Scan (gitleaks)",
                 "Full Security Gate (non-hotfix)",
                 "AI Code Review (blocking on HIGH+)"
@@ -230,7 +222,7 @@ jobs:
                 fi
 
                 # Fetch template content via git tree for accurate SHA
-                CONTENT=$(gh api "/repos/ZySec-AI/.github/contents/workflow-templates/$WF" \
+                CONTENT=$(gh api "/repos/ZySec-AI/.github/contents/workflow-templates/$WF?ref=develop" \
                   --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 
                 if [ -z "$CONTENT" ]; then

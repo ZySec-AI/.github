@@ -1,13 +1,14 @@
-# This workflow has been consolidated into develop-pr-automation.yml
-# Kept as a stub to avoid blocking the develop branch workflow parser.
-# Safe to delete once develop is merged into main.
-name: PR checklist comment (stub)
+name: PR checklist comment
 
 on:
-  workflow_dispatch:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [develop]
+
+permissions:
+  pull-requests: write
 
 jobs:
-  stub:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "This workflow is superseded by develop-pr-automation.yml"
+  comment:
+    uses: ZySec-AI/.github/.github/workflows/_reusable-merge-comment.yml@develop
+    secrets: inherit

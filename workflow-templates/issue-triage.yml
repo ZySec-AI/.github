@@ -2,7 +2,7 @@ name: Issue Triage
 
 on:
   issues:
-    types: [opened, edited, reopened]
+    types: [opened, reopened]
 
 permissions:
   contents: read
@@ -14,72 +14,9 @@ jobs:
     if: |
       !contains(github.event.issue.labels.*.name, 'bot-skip') &&
       !contains(github.event.issue.labels.*.name, 'bot-reviewed')
-    uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@main
-    secrets: inherit
+    uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@develop
+    secrets:
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY || secrets.ANTHROPIC_API_KEY }}
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: issue-triage
-
-  validate-taxonomy:
-    if: |
-      !contains(github.event.issue.labels.*.name, 'bot-skip')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check taxonomy compliance
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const labels = context.payload.issue.labels.map(l => l.name);
-            const body = context.payload.issue.body || '';
-            const issues = [];
-
-            // Check type label
-            const typeLabels = labels.filter(l => l.startsWith('type:'));
-            if (typeLabels.length === 0) {
-              issues.push('Missing `type:*` label. Add one of: `type:epic`, `type:feature`, `type:bug`, `type:task`, `type:spec`, `type:chore`, `type:tech-debt`, `type:docs`, `type:infra`, `type:test`.');
-            } else if (typeLabels.length > 1) {
-              issues.push(`Multiple type labels found (${typeLabels.join(', ')}). Use exactly one.`);
-            }
-
-            // Check status label
-            const statusLabels = labels.filter(l => l.startsWith('status:'));
-            if (statusLabels.length === 0) {
-              issues.push('Missing `status:*` label. Default to `status:planned`.');
-            }
-
-            // Check priority label
-            const priorityLabels = labels.filter(l => l.startsWith('priority:'));
-            if (priorityLabels.length === 0) {
-              issues.push('Missing `priority:*` label. Add one of: `priority:p0-critical`, `priority:p1-high`, `priority:p2-normal`, `priority:p3-low`.');
-            }
-
-            // Check severity for bugs
-            if (typeLabels.includes('type:bug')) {
-              const severityLabels = labels.filter(l => l.startsWith('severity:'));
-              if (severityLabels.length === 0) {
-                issues.push('Bug issues require a `severity:*` label (`severity:critical`, `severity:high`, `severity:medium`, `severity:low`).');
-              }
-            }
-
-            // Check for repo field in body
-            if (!body.includes('Repo') && !body.includes('repo') && !body.includes('Affected repo') && !body.includes('Target repo')) {
-              issues.push('Issue body should include a repo field in the metadata table.');
-            }
-
-            // Post results
-            if (issues.length > 0) {
-              const comment = `## Taxonomy Check\n\nThe following issues were found with this issue's classification:\n\n${issues.map(i => `- ${i}`).join('\n')}\n\nSee the [Ticket Taxonomy](https://github.com/ZySec-AI/.github/blob/develop/TICKET_TAXONOMY.md) for the full label reference.\n\n_Add \`bot-skip\` label to suppress this check._`;
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: comment
-              });
-            } else {
-              // Add bot-reviewed label if clean
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                labels: ['bot-reviewed']
-              });
-            }

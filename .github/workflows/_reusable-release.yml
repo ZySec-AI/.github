@@ -125,7 +125,7 @@ jobs:
               -f base=release \
               --paginate \
               --jq '.[] | select(.merged_at != null) | [.number, .title] | @tsv' \
-              > /tmp/pr_list.tsv 2>/dev/null | head -50 || echo "" > /tmp/pr_list.tsv
+              | head -50 > /tmp/pr_list.tsv 2>/dev/null || echo "" > /tmp/pr_list.tsv
           fi
 
           # FIX: build release notes via file — avoids shell injection from PR titles.
