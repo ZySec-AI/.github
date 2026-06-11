@@ -109,11 +109,11 @@ jobs:
             "required_status_checks": {
               "strict": true,
               "contexts": [
-                "Branch name + merge flow",
-                "Validate PR metadata",
-                "quality / Quality Gate",
+                "branch-checks / Branch name + merge flow",
+                "validate / Validate PR metadata",
+                "gates / Quality Gate",
                 "scan / Secret Scan (gitleaks)",
-                "Full Security Gate (non-hotfix)",
+                "full-security / Full Security Gate (non-hotfix)",
                 "AI Code Review (blocking on HIGH+)"
               ]
             },
