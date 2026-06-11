@@ -11,13 +11,15 @@ on:
         default: 'CRITICAL'
     secrets:
       LLM_PROVIDER:
-        required: false   # MINIMAX | ZAI | ANTHROPIC — defaults to MINIMAX
+        required: false   # MINIMAX | ZAI | ANTHROPIC
       LLM_API_KEY:
-        required: true    # API key for the chosen provider
+        required: true
+      LLM_BASE_URL:
+        required: false   # org secret — overrides provider default URL
       LLM_MODEL:
-        required: false   # override model; provider default used if empty
+        required: false
       ORG_ADMIN_TOKEN:
-        required: false   # gh CLI token; falls back to GITHUB_TOKEN if absent
+        required: false
 
 jobs:
   agent:
@@ -34,28 +36,38 @@ jobs:
         id: provider
         env:
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
-          LLM_MODEL_OVERRIDE: ${{ secrets.LLM_MODEL }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
-          PROVIDER=$(echo "${LLM_PROVIDER:-MINIMAX}" | tr '[:lower:]' '[:upper:]' | tr -d ' \t\r\n')
+          if [ -z "${{ secrets.LLM_API_KEY }}" ]; then
+            echo "❌ LLM_API_KEY org secret is required" >&2
+            exit 1
+          fi
+
+          PROVIDER=$(echo "${LLM_PROVIDER:-ZAI}" | tr '[:lower:]' '[:upper:]' | tr -d ' \t\r\n')
+          BASE_URL=$(echo "${LLM_BASE_URL}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+          if [ -z "$BASE_URL" ]; then
+            case "$PROVIDER" in
+              MINIMAX) BASE_URL="https://api.minimax.io/anthropic" ;;
+              ZAI)     BASE_URL="https://api.z.ai/api/anthropic" ;;
+              ANTHROPIC) BASE_URL="https://api.anthropic.com" ;;
+              *)
+                echo "❌ Unknown LLM_PROVIDER: '$PROVIDER' (set LLM_BASE_URL or use MINIMAX | ZAI | ANTHROPIC)" >&2
+                exit 1
+                ;;
+            esac
+          fi
+
           case "$PROVIDER" in
-            MINIMAX)
-              BASE_URL="https://api.minimax.io/anthropic"
-              MODEL_DEFAULT="MiniMax-M2.7"
-              ;;
-            ZAI)
-              BASE_URL="https://api.z.ai/api/anthropic"
-              MODEL_DEFAULT="GLM-5.1"
-              ;;
-            ANTHROPIC)
-              BASE_URL="https://api.anthropic.com"
-              MODEL_DEFAULT="claude-sonnet-4-6"
-              ;;
-            *)
-              echo "❌ Unknown LLM_PROVIDER: '$PROVIDER' (expected MINIMAX | ZAI | ANTHROPIC)" >&2
-              exit 1
-              ;;
+            MINIMAX)   MODEL_DEFAULT="MiniMax-M2.7" ;;
+            ZAI)       MODEL_DEFAULT="GLM-5.1" ;;
+            ANTHROPIC) MODEL_DEFAULT="claude-sonnet-4-6" ;;
+            *)         MODEL_DEFAULT="GLM-5.1" ;;
           esac
-          MODEL="${LLM_MODEL_OVERRIDE:-$MODEL_DEFAULT}"
+
+          MODEL=$(echo "${LLM_MODEL}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          MODEL="${MODEL:-$MODEL_DEFAULT}"
           echo "base_url=$BASE_URL" >> $GITHUB_OUTPUT
           echo "model=$MODEL"       >> $GITHUB_OUTPUT
           echo "✓ Provider: $PROVIDER | Model: $MODEL @ $BASE_URL"

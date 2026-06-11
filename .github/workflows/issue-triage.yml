@@ -16,7 +16,10 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'bot-reviewed')
     uses: ./.github/workflows/_reusable-code-review.yml
     secrets:
-      LLM_API_KEY: ${{ secrets.LLM_API_KEY || secrets.ANTHROPIC_API_KEY }}
+      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: issue-triage
