@@ -2,6 +2,9 @@ name: pr standards (reusable)
 
 on:
   workflow_call:
+    secrets:
+      ORG_ADMIN_TOKEN:
+        required: false
 
 permissions:
   pull-requests: write
@@ -25,11 +28,22 @@ jobs:
 
       - name: Check type label
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+          EVENT_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
         run: |
-          LABELS=$(gh api /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/labels \
-            --jq '[.[].name] | join(" ")' 2>/dev/null || echo "")
-          echo "Labels: $LABELS"
+          LABELS="$EVENT_LABELS"
+
+          # Fallback to API only when webhook payload has no labels yet
+          if [ -z "$LABELS" ]; then
+            RESP=$(gh api "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" 2>&1) || true
+            if echo "$RESP" | jq -e 'type == "array"' >/dev/null 2>&1; then
+              LABELS=$(echo "$RESP" | jq -r '[.[].name] | join(" ")')
+            else
+              echo "⚠️ Could not fetch labels via API: $RESP"
+            fi
+          fi
+
+          echo "Labels: ${LABELS:-<none>}"
 
           HAS_TYPE=false
           for label in $LABELS; do
@@ -40,16 +54,14 @@ jobs:
 
           if ! $HAS_TYPE; then
             echo "❌ PR must have a type label: type:feature, type:bug, type:chore, type:docs"
+            echo "   (Use 'type:bug' — not plain 'bug')"
             exit 1
           fi
           echo "✓ type label present"
 
       - name: Check milestone
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          MILESTONE=$(gh api /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }} \
-            --jq '.milestone.title // ""' 2>/dev/null || echo "")
+          MILESTONE="${{ github.event.pull_request.milestone.title }}"
           if [ -z "$MILESTONE" ]; then
             echo "⚠️ No milestone set on this PR. Consider assigning one."
           else

@@ -12,4 +12,5 @@ permissions:
 jobs:
   validate:
     uses: ZySec-AI/.github/.github/workflows/_reusable-pr-standards.yml@develop
-    secrets: inherit
+    secrets:
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
