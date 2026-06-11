@@ -11,5 +11,5 @@ permissions:
 
 jobs:
   retro:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-sprint-retro.yml@develop
+    uses: ./.github/workflows/_reusable-sprint-retro.yml
     secrets: inherit

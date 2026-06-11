@@ -13,5 +13,5 @@ permissions:
 
 jobs:
   sync:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-docs-to-wiki.yml@develop
+    uses: ./.github/workflows/_reusable-docs-to-wiki.yml
     secrets: inherit

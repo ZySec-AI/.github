@@ -10,5 +10,5 @@ permissions:
 
 jobs:
   comment:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-merge-comment.yml@develop
+    uses: ./.github/workflows/_reusable-merge-comment.yml
     secrets: inherit

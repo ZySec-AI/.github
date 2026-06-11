@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copy standard thin wrappers from workflow-templates/ into .github/workflows/
 # so the org .github meta-repo runs the same triggers as app repos.
-# Logic lives only in _reusable-*.yml — never duplicate steps here.
+# Rewrites reusable refs to local ./ paths so PR branches work before merge to develop.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,7 +13,10 @@ STANDARD=(
 )
 
 for f in "${STANDARD[@]}"; do
-  cp "$ROOT/workflow-templates/$f" "$ROOT/.github/workflows/$f"
+  sed \
+    -e 's|ZySec-AI/\.github/\.github/workflows/|./.github/workflows/|g' \
+    -e 's|@develop||g' \
+    "$ROOT/workflow-templates/$f" > "$ROOT/.github/workflows/$f"
   echo "synced $f"
 done
 

@@ -11,5 +11,5 @@ permissions:
 
 jobs:
   stale:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-stale.yml@develop
+    uses: ./.github/workflows/_reusable-stale.yml
     secrets: inherit

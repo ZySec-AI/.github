@@ -32,7 +32,7 @@ jobs:
     name: Fast Security Gate (hotfix)
     needs: detect
     if: contains(github.event.pull_request.labels.*.name, 'hotfix')
-    uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
+    uses: ./.github/workflows/_reusable-security.yml
     with:
       python: ${{ needs.detect.outputs.python == '1' }}
       node: ${{ needs.detect.outputs.node == '1' }}
@@ -45,7 +45,7 @@ jobs:
     name: Full Security Gate (non-hotfix)
     needs: detect
     if: "!contains(github.event.pull_request.labels.*.name, 'hotfix')"
-    uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
+    uses: ./.github/workflows/_reusable-security.yml
     with:
       python: ${{ needs.detect.outputs.python == '1' }}
       node: ${{ needs.detect.outputs.node == '1' }}

@@ -129,6 +129,7 @@ jobs:
           fi
 
       - name: Run code reviewer
+        continue-on-error: ${{ inputs.fail_on == 'NEVER' }}
         uses: ZySec-AI/code-reviewer@develop
         with:
           mode: ${{ inputs.mode }}

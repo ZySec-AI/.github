@@ -8,7 +8,6 @@ on:
       - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
-      - '.github/**'
   pull_request:
     branches: [develop, stage, release]
     paths-ignore:
@@ -16,7 +15,6 @@ on:
       - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
-      - '.github/**'
   workflow_dispatch:
 
 permissions:
@@ -43,7 +41,7 @@ jobs:
 
   scan:
     needs: detect
-    uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
+    uses: ./.github/workflows/_reusable-security.yml
     with:
       python: ${{ needs.detect.outputs.python == '1' }}
       node: ${{ needs.detect.outputs.node == '1' }}

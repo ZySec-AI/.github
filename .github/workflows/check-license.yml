@@ -10,5 +10,5 @@ permissions:
 
 jobs:
   check-license:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-check-license.yml@develop
+    uses: ./.github/workflows/_reusable-check-license.yml
     secrets: inherit

@@ -14,7 +14,7 @@ jobs:
     if: |
       !contains(github.event.issue.labels.*.name, 'bot-skip') &&
       !contains(github.event.issue.labels.*.name, 'bot-reviewed')
-    uses: ZySec-AI/.github/.github/workflows/_reusable-code-review.yml@develop
+    uses: ./.github/workflows/_reusable-code-review.yml
     secrets:
       LLM_API_KEY: ${{ secrets.LLM_API_KEY || secrets.ANTHROPIC_API_KEY }}
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}

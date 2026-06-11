@@ -10,5 +10,5 @@ permissions:
 
 jobs:
   branch-checks:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-branch-flow-check.yml@develop
+    uses: ./.github/workflows/_reusable-branch-flow-check.yml
     secrets: inherit

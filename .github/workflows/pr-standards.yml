@@ -11,5 +11,5 @@ permissions:
 
 jobs:
   validate:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-pr-standards.yml@develop
+    uses: ./.github/workflows/_reusable-pr-standards.yml
     secrets: inherit
