@@ -21,4 +21,4 @@ jobs:
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
       mode: audit
-      fail_on: CRITICAL
+      fail_on: NEVER

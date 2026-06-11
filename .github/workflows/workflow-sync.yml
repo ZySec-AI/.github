@@ -147,9 +147,9 @@ jobs:
           git add .github/workflows/
           git diff --cached --quiet && { echo "No actual changes"; exit 0; }
 
-          git commit -m "chore(ci): sync workflow templates from .github org repo
-
-Auto-synced by Workflow Sync workflow."
+          git commit \
+            -m "chore(ci): sync workflow templates from .github org repo" \
+            -m "Auto-synced by Workflow Sync workflow."
 
           if [ "$DRY_RUN" = "true" ]; then
             echo "DRY RUN: would push branch $BRANCH and create PR"
@@ -165,16 +165,12 @@ Auto-synced by Workflow Sync workflow."
             exit 0
           fi
 
+          SYNC_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           gh pr create \
             --base develop \
             --head "$BRANCH" \
             --title "chore(ci): sync workflow templates from .github org repo" \
-            --body "## Auto-synced workflow templates
-
-This PR updates standard \`.github/workflows/*\` wrappers to match
-\`ZySec-AI/.github/workflow-templates/\`.
-
-Auto-created by [Workflow Sync](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})." \
+            --body "Auto-synced workflow templates. Updates standard .github/workflows wrappers from org workflow-templates. Workflow Sync run: $SYNC_URL" \
             --label "ci,cleanup" 2>/dev/null || \
           gh pr create \
             --base develop \
