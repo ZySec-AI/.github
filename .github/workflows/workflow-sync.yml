@@ -1,18 +1,15 @@
 # =============================================================================
 # WORKFLOW: Workflow Sync (org-wide)
-# PURPOSE:  Daily sync of security.yml and quality.yml wrapper files from
-#           canonical templates in this repo. Opens PRs for repos with drift.
-# TRIGGER:  Daily at 07:17 UTC (after CI Failure Monitor at 06:17)
-#           Or manual dispatch
-# TEMPLATES: .github/workflow-templates/security.yml
-#            .github/workflow-templates/quality.yml
+# PURPOSE:  Daily sync of standard workflow wrapper files from canonical
+#           templates in this repo. Opens PRs for repos with drift.
+# TRIGGER:  Daily at 07:17 UTC | manual dispatch
 # CONTACT:  platform-eng@zysec.ai
 # =============================================================================
 name: Workflow Sync
 
 on:
   schedule:
-    - cron: '17 7 * * *'  # daily 07:17 UTC
+    - cron: '17 7 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -78,9 +75,27 @@ jobs:
         id: drift
         run: |
           DRIFT=false
+          TEMPLATES=(
+            quality.yml
+            security.yml
+            hotfix-security.yml
+            check-license.yml
+            release.yml
+            code-review.yml
+            code-review-pr.yml
+            issue-triage.yml
+            issue-auto-fix.yml
+            branch-flow-check.yml
+            pr-standards.yml
+            stale.yml
+            merge-comment.yml
+            code-freeze.yml
+            sprint-retro.yml
+            docs-to-wiki.yml
+          )
 
-          for template in security.yml quality.yml; do
-            TEMPLATE_PATH="templates/.github/workflow-templates/$template"
+          for template in "${TEMPLATES[@]}"; do
+            TEMPLATE_PATH="templates/workflow-templates/$template"
             TARGET_PATH="target/.github/workflows/$template"
 
             [ ! -f "$TEMPLATE_PATH" ] && continue
@@ -104,9 +119,27 @@ jobs:
           BRANCH="ci/sync-workflow-templates-$(date +%Y%m%d)"
           git checkout -b "$BRANCH"
 
-          # Copy templates
-          for template in security.yml quality.yml; do
-            TEMPLATE_PATH="../templates/.github/workflow-templates/$template"
+          TEMPLATES=(
+            quality.yml
+            security.yml
+            hotfix-security.yml
+            check-license.yml
+            release.yml
+            code-review.yml
+            code-review-pr.yml
+            issue-triage.yml
+            issue-auto-fix.yml
+            branch-flow-check.yml
+            pr-standards.yml
+            stale.yml
+            merge-comment.yml
+            code-freeze.yml
+            sprint-retro.yml
+            docs-to-wiki.yml
+          )
+
+          for template in "${TEMPLATES[@]}"; do
+            TEMPLATE_PATH="../templates/workflow-templates/$template"
             TARGET_PATH=".github/workflows/$template"
             [ -f "$TEMPLATE_PATH" ] && [ -f "$TARGET_PATH" ] && cp "$TEMPLATE_PATH" "$TARGET_PATH"
           done
@@ -116,8 +149,7 @@ jobs:
 
           git commit -m "chore(ci): sync workflow templates from .github org repo
 
-Auto-synced by Workflow Sync workflow.
-Templates: .github/workflow-templates/{security,quality}.yml"
+Auto-synced by Workflow Sync workflow."
 
           if [ "$DRY_RUN" = "true" ]; then
             echo "DRY RUN: would push branch $BRANCH and create PR"
@@ -127,7 +159,6 @@ Templates: .github/workflow-templates/{security,quality}.yml"
 
           git push -u origin "$BRANCH"
 
-          # Check for existing open PR
           EXISTING=$(gh pr list --state open --head "$BRANCH" --json number -q '.[0].number' 2>/dev/null || true)
           if [ -n "$EXISTING" ]; then
             echo "PR #$EXISTING already open"
@@ -140,17 +171,8 @@ Templates: .github/workflow-templates/{security,quality}.yml"
             --title "chore(ci): sync workflow templates from .github org repo" \
             --body "## Auto-synced workflow templates
 
-This PR updates \`security.yml\` and \`quality.yml\` to match the canonical
-templates in the \`.github\` org repo.
-
-### What changed
-- Path filtering (skip docs/workflow-only changes)
-- Fast-mode security on develop (skip CodeQL)
-- Centralized reusable workflow references
-
-### Why
-Workflow templates are maintained centrally in \`ZySec-AI/.github\`.
-This PR syncs the thin wrapper files to the latest version.
+This PR updates standard \`.github/workflows/*\` wrappers to match
+\`ZySec-AI/.github/workflow-templates/\`.
 
 Auto-created by [Workflow Sync](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})." \
             --label "ci,cleanup" 2>/dev/null || \

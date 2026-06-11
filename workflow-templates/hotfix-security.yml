@@ -1,21 +1,9 @@
-name: Security
+name: Security (Hotfix Fast-Path)
 
 on:
-  push:
-    branches: [develop, stage, release]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
   pull_request:
-    branches: [develop, stage, release]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
-  workflow_dispatch:
+    branches: [release]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -41,14 +29,28 @@ jobs:
           echo "rust=$(find . -name 'Cargo.toml' | head -1 | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
           echo "docker=$(find . -name 'Dockerfile' | head -1 | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
-  scan:
+  fast-security:
+    name: Fast Security Gate (hotfix)
     needs: detect
-    uses: ./.github/workflows/_reusable-security.yml
+    if: contains(github.event.pull_request.labels.*.name, 'hotfix')
+    uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
     with:
       python: ${{ needs.detect.outputs.python == '1' }}
       node: ${{ needs.detect.outputs.node == '1' }}
       rust: ${{ needs.detect.outputs.rust == '1' }}
       docker: ${{ needs.detect.outputs.docker == '1' }}
-      # Fast mode on develop (skip CodeQL), full on release/stage
-      fast-mode: ${{ github.ref != 'refs/heads/release' && github.ref != 'refs/heads/stage' }}
+      fast-mode: true
+    secrets: inherit
+
+  full-security:
+    name: Full Security Gate (non-hotfix)
+    needs: detect
+    if: "!contains(github.event.pull_request.labels.*.name, 'hotfix')"
+    uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
+    with:
+      python: ${{ needs.detect.outputs.python == '1' }}
+      node: ${{ needs.detect.outputs.node == '1' }}
+      rust: ${{ needs.detect.outputs.rust == '1' }}
+      docker: ${{ needs.detect.outputs.docker == '1' }}
+      fast-mode: false
     secrets: inherit

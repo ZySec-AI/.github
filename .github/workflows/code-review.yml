@@ -1,8 +1,9 @@
-name: Issue Triage
+name: Code Review (auto on develop)
 
 on:
-  issues:
-    types: [opened, reopened]
+  push:
+    branches: [develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,10 +11,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  triage:
-    if: |
-      !contains(github.event.issue.labels.*.name, 'bot-skip') &&
-      !contains(github.event.issue.labels.*.name, 'bot-reviewed')
+  review:
     uses: ./.github/workflows/_reusable-code-review.yml
     secrets:
       LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
@@ -22,4 +20,5 @@ jobs:
       LLM_MODEL: ${{ secrets.LLM_MODEL }}
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
-      mode: issue-triage
+      mode: audit
+      fail_on: CRITICAL

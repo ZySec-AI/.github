@@ -1,6 +1,6 @@
 {
-  "name": "ZySec AI — Automated Code Review (z.ai)",
-  "description": "Auto-runs Claude Code review on every develop merge. Posts findings as commit comments + opens issues for HIGH/CRITICAL severity. Powered by z.ai GLM-5.1.",
+  "name": "ZySec AI — Automated Code Review",
+  "description": "Auto-runs Claude Code review on every develop merge. Posts findings as commit comments + opens issues for HIGH/CRITICAL severity. LLM endpoint and model come from org secrets (LLM_BASE_URL, LLM_MODEL).",
   "iconName": "shield",
   "categories": ["Code Quality", "Continuous Integration", "Security"]
 }

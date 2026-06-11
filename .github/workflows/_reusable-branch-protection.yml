@@ -85,8 +85,8 @@ jobs:
           #   "scan / Secret Scan (gitleaks)"
           #
           apply_protection "develop" '[
-            "Branch name + merge flow",
-            "Validate PR metadata",
+            "branch-checks / Branch name + merge flow",
+            "validate / Validate PR metadata",
             "gates / Quality Gate",
             "scan / Secret Scan (gitleaks)"
           ]'
@@ -99,10 +99,10 @@ jobs:
           #   "release / QA Sign-off Gate"  (only fires on PRs)
           #
           apply_protection "release" '[
-            "Branch name + merge flow",
-            "Validate PR metadata",
+            "branch-checks / Branch name + merge flow",
+            "validate / Validate PR metadata",
             "gates / Quality Gate",
             "scan / Secret Scan (gitleaks)",
-            "Full Security Gate (non-hotfix)",
+            "full-security / Full Security Gate (non-hotfix)",
             "AI Code Review (blocking on HIGH+)"
           ]'

@@ -26,35 +26,9 @@ on:
         required: false
 
 jobs:
-  detect:
-    name: Detect project types
-    runs-on: ubuntu-latest
-    outputs:
-      python: ${{ steps.check.outputs.python }}
-      node: ${{ steps.check.outputs.node }}
-      rust: ${{ steps.check.outputs.rust }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check for project files
-        id: check
-        run: |
-          python=0
-          node=0
-          rust=0
-
-          [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ] && python=1
-          [ -f "package.json" ] && node=1
-          [ -f "Cargo.toml" ] && rust=1
-
-          echo "python=$python" >> $GITHUB_OUTPUT
-          echo "node=$node" >> $GITHUB_OUTPUT
-          echo "rust=$rust" >> $GITHUB_OUTPUT
-          echo "Detected: python=$python node=$node rust=$rust"
-
   python-quality:
     name: Python — lint / type / coverage
-    needs: detect
-    if: needs.detect.outputs.python == '1'
+    if: inputs.python
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -105,50 +79,116 @@ jobs:
           retention-days: 7
 
   node-quality:
-    name: Node — lint / type / build
-    needs: detect
-    if: needs.detect.outputs.node == '1'
+    name: Node / Next.js — lint / type / build
+    if: inputs.node
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    env:
+      # Placeholders for Next.js + Prisma builds (generate/build only — no live DB)
+      MONGODB_URI: mongodb://127.0.0.1:27017/ci-gate
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+      API_URL: http://localhost:8001
+      NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v4
+
+      - name: Detect stack (Next.js, Prisma, package manager)
+        id: stack
+        run: |
+          nextjs=0
+          prisma=0
+          if [ -f package.json ] && grep -qE '"next"[[:space:]]*:' package.json; then nextjs=1; fi
+          if [ -f next.config.ts ] || [ -f next.config.js ] || [ -f next.config.mjs ]; then nextjs=1; fi
+          if [ -f prisma/schema.prisma ]; then prisma=1; fi
+
+          if [ -f pnpm-lock.yaml ]; then pm=pnpm
+          elif [ -f yarn.lock ]; then pm=yarn
+          elif [ -f package-lock.json ]; then pm=npm
+          else pm=npm
+          fi
+
+          echo "nextjs=$nextjs" >> "$GITHUB_OUTPUT"
+          echo "prisma=$prisma" >> "$GITHUB_OUTPUT"
+          echo "pm=$pm" >> "$GITHUB_OUTPUT"
+          echo "Detected: nextjs=$nextjs prisma=$prisma pm=$pm"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.stack.outputs.pm == 'pnpm'
+        with:
+          version: 9
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
-
-      - uses: pnpm/action-setup@v4
-        # No explicit version — reads from package.json "packageManager" field
-
-      - name: Get pnpm store path
-        id: pnpm-cache
-        run: echo "store=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.store }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-
+          cache: ${{ steps.stack.outputs.pm }}
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          case "${{ steps.stack.outputs.pm }}" in
+            pnpm) pnpm install --frozen-lockfile ;;
+            yarn) yarn install --immutable ;;
+            npm)
+              if [ -f package-lock.json ]; then npm ci; else npm install; fi
+              ;;
+          esac
 
-      - name: ESLint
-        run: pnpm run --if-present lint
+      - name: Prisma generate
+        if: steps.stack.outputs.prisma == '1'
+        run: |
+          case "${{ steps.stack.outputs.pm }}" in
+            pnpm) pnpm exec prisma generate ;;
+            yarn) yarn prisma generate ;;
+            npm) npx prisma generate ;;
+          esac
+
+      - name: Lint
+        run: |
+          PM="${{ steps.stack.outputs.pm }}"
+          node -e "const s=require('./package.json').scripts||{}; process.exit(s.lint?0:1)" || { echo "No lint script — skipping"; exit 0; }
+          case "$PM" in
+            pnpm) pnpm run lint ;;
+            yarn) yarn lint ;;
+            npm) npm run lint ;;
+          esac
 
       - name: Type check
         run: |
-          pnpm run --if-present type-check || \
-          pnpm run --if-present typecheck || \
-          pnpm exec tsc --noEmit
+          PM="${{ steps.stack.outputs.pm }}"
+          has() { node -e "const s=require('./package.json').scripts||{}; process.exit(s['$1']?0:1)"; }
+          run() {
+            case "$PM" in
+              pnpm) pnpm run "$1" ;;
+              yarn) yarn "$1" ;;
+              npm) npm run "$1" ;;
+            esac
+          }
+          tsc() {
+            case "$PM" in
+              pnpm) pnpm exec tsc --noEmit ;;
+              yarn) yarn exec tsc --noEmit ;;
+              npm) npx tsc --noEmit ;;
+            esac
+          }
+          if has type-check; then run type-check
+          elif has typecheck; then run typecheck
+          else tsc
+          fi
 
       - name: Build
-        run: pnpm run --if-present build
+        env:
+          NODE_ENV: production
+        run: |
+          PM="${{ steps.stack.outputs.pm }}"
+          node -e "const s=require('./package.json').scripts||{}; process.exit(s.build?0:1)" || { echo "No build script — skipping"; exit 0; }
+          case "$PM" in
+            pnpm) pnpm run build ;;
+            yarn) yarn build ;;
+            npm) npm run build ;;
+          esac
 
   rust-quality:
     name: Rust — fmt / clippy / test
-    needs: detect
-    if: needs.detect.outputs.rust == '1'
+    if: inputs.rust
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -177,6 +217,12 @@ jobs:
     steps:
       - name: Evaluate gates
         run: |
+          if [ "${{ inputs.python }}" != "true" ] && \
+             [ "${{ inputs.node }}" != "true" ] && \
+             [ "${{ inputs.rust }}" != "true" ]; then
+            echo "No language stack detected — nothing to gate."
+            exit 0
+          fi
           FAILED=false
           for result in \
             "${{ needs.python-quality.result }}" \

@@ -17,7 +17,7 @@ permissions: {}
 
 jobs:
   remind:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-code-freeze.yml@develop
+    uses: ./.github/workflows/_reusable-code-freeze.yml
     secrets: inherit
     with:
       freeze_type: ${{ inputs.type || '' }}
