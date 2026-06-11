@@ -57,17 +57,52 @@ jobs:
                 exit 1
                 ;;
             esac
+          else
+            # LLM_BASE_URL wins — infer provider so model defaults match the endpoint
+            case "$BASE_URL" in
+              *z.ai*) PROVIDER="ZAI" ;;
+              *minimax*) PROVIDER="MINIMAX" ;;
+              *anthropic.com*) PROVIDER="ANTHROPIC" ;;
+            esac
           fi
 
           case "$PROVIDER" in
             MINIMAX)   MODEL_DEFAULT="MiniMax-M2.7" ;;
-            ZAI)       MODEL_DEFAULT="GLM-5.1" ;;
+            ZAI)       MODEL_DEFAULT="glm-5.1" ;;
             ANTHROPIC) MODEL_DEFAULT="claude-sonnet-4-6" ;;
-            *)         MODEL_DEFAULT="GLM-5.1" ;;
+            *)         MODEL_DEFAULT="glm-5.1" ;;
           esac
 
           MODEL=$(echo "${LLM_MODEL}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           MODEL="${MODEL:-$MODEL_DEFAULT}"
+
+          # z.ai expects lowercase glm-* model IDs in Claude Code
+          case "$PROVIDER" in
+            ZAI) MODEL=$(echo "$MODEL" | tr '[:upper:]' '[:lower:]') ;;
+          esac
+
+          # Org secrets often drift (e.g. MiniMax model left after switching to ZAI)
+          case "$PROVIDER" in
+            ZAI)
+              if echo "$MODEL" | grep -qiE 'minimax|claude'; then
+                echo "⚠ LLM_MODEL '$MODEL' incompatible with ZAI — using $MODEL_DEFAULT" >&2
+                MODEL="$MODEL_DEFAULT"
+              fi
+              ;;
+            MINIMAX)
+              if echo "$MODEL" | grep -qiE '^glm|claude'; then
+                echo "⚠ LLM_MODEL '$MODEL' incompatible with MINIMAX — using $MODEL_DEFAULT" >&2
+                MODEL="$MODEL_DEFAULT"
+              fi
+              ;;
+            ANTHROPIC)
+              if echo "$MODEL" | grep -qiE '^glm|minimax'; then
+                echo "⚠ LLM_MODEL '$MODEL' incompatible with ANTHROPIC — using $MODEL_DEFAULT" >&2
+                MODEL="$MODEL_DEFAULT"
+              fi
+              ;;
+          esac
+
           echo "base_url=$BASE_URL" >> $GITHUB_OUTPUT
           echo "model=$MODEL"       >> $GITHUB_OUTPUT
           echo "✓ Provider: $PROVIDER | Model: $MODEL @ $BASE_URL"
