@@ -15,7 +15,7 @@ jobs:
       - name: Validate branch name (Conventional Commits)
         run: |
           BRANCH="${{ github.head_ref }}"
-          PATTERN='^(feat|feature|fix|bugfix|bug|hotfix|chore|docs|doc|documentation|refactor|test|tests|perf|performance|build|ci|cd|cicd|revert|release-prep|support|experiment|spike)/[a-z0-9][a-z0-9.-]*(/[a-z0-9][a-z0-9.-]*)?$'
+          PATTERN='^(feat|feature|fix|bugfix|bug|hotfix|chore|docs|doc|documentation|refactor|test|tests|perf|performance|build|ci|cd|cicd|revert|release-prep|support|experiment|spike|infra)/[a-z0-9][a-z0-9.-]*(/[a-z0-9][a-z0-9.-]*)?$'
           EXEMPT='^(develop|stage|release|release/.+)$'
 
           if [[ "$BRANCH" =~ $EXEMPT ]] || [[ "$BRANCH" =~ $PATTERN ]]; then
@@ -30,9 +30,9 @@ jobs:
             echo "  feat | feature | fix | bugfix | bug | hotfix | chore"
             echo "  docs | doc | documentation | refactor | test | tests"
             echo "  perf | performance | build | ci | cd | cicd | revert"
-            echo "  release-prep | support | experiment | spike"
+            echo "  release-prep | support | experiment | spike | infra"
             echo ""
-            echo "Examples: feat/oauth-login, fix/cors-leak, chore/bump-deps"
+            echo "Examples: feat/oauth-login, infra/ci-centralize, fix/cors-leak, chore/bump-deps"
             echo "Body: lowercase letters, digits, hyphens, dots only."
             exit 1
           fi

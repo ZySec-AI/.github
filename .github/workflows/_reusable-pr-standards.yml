@@ -26,7 +26,7 @@ jobs:
           fi
           echo "✓ PR has description"
 
-      - name: Check type label
+      - name: Check PR has at least one label
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
           EVENT_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
@@ -45,20 +45,13 @@ jobs:
 
           echo "Labels: ${LABELS:-<none>}"
 
-          HAS_TYPE=false
-          for label in $LABELS; do
-            case "$label" in
-              type:bug|type:feature|type:chore|type:docs|type:question) HAS_TYPE=true ;;
-              bug|feature|chore|docs|documentation|enhancement|question) HAS_TYPE=true ;;
-            esac
-          done
-
-          if ! $HAS_TYPE; then
-            echo "❌ PR must have a type label, e.g. bug, feature, chore, docs"
-            echo "   (type:bug and type:feature also accepted)"
+          if [ -z "$LABELS" ]; then
+            echo "❌ PR must have at least one label (any org label is accepted)"
+            echo "   Examples: type:feature, type:bug, type:infra, type:chore, type:docs,"
+            echo "             severity:high, dimension:security, hotfix, bot-skip"
             exit 1
           fi
-          echo "✓ type label present"
+          echo "✓ at least one label present"
 
       - name: Check milestone
         run: |

@@ -62,7 +62,7 @@ All checks below are **automated and enforced**. Review them now so you're not b
 | Branch name convention | Doesn't match \`type/description\` (e.g. \`feat/my-feature\`) |
 | Merge flow | Invalid source → target (feature branches must target \`develop\`) |
 | PR description | Body is empty or < 20 chars |
-| PR label | No type label (\`bug\`, \`feature\`, \`chore\`, \`docs\`, or \`type:*\`) |
+| PR label | No label on the PR (at least one label required — any org label counts) |
 | Approving review | At least 1 approval required |
 | Resolved conversations | All comments must be resolved |
 
@@ -86,8 +86,9 @@ An AI reviewer will post inline comments on security, quality, and logic issues.
 | \`refactor/\` | Refactoring without behaviour change |
 | \`test/\` | Test additions or fixes |
 | \`ci/\` | CI/CD pipeline changes |
+| \`infra/\` | Infrastructure, platform, deployment, org workflows |
 
-**Good:** \`feat/oauth-login\` · \`fix/cors-header-leak\` · \`chore/bump-fastapi-0.112\`
+**Good:** \`feat/oauth-login\` · \`infra/ci-centralize\` · \`fix/cors-header-leak\` · \`chore/bump-fastapi-0.112\`
 
 **Bad:** \`my-branch\` · \`Feature/LoginPage\` · \`fix_cors\` · \`john/working\`
 
@@ -100,7 +101,7 @@ An AI reviewer will post inline comments on security, quality, and logic issues.
 <details>
 <summary>🏷️ Labels you should set on this PR</summary>
 
-Add exactly one \`type:*\` label — the PR standards check will fail without it:
+Add **at least one label** — any org label is accepted (\`type:*\`, \`severity:*\`, \`dimension:*\`, \`hotfix\`, \`bot-skip\`, etc.):
 
 | Label | When to use |
 |-------|------------|
@@ -108,6 +109,10 @@ Add exactly one \`type:*\` label — the PR standards check will fail without it
 | \`type:bug\` | Defect or regression |
 | \`type:chore\` | Maintenance, deps, config |
 | \`type:docs\` | Documentation only |
+| \`type:infra\` | CI, deployment, Kubernetes, platform workflows |
+| \`type:task\` | General work item |
+| \`type:tech-debt\` | Refactor / cleanup |
+| \`type:test\` | Tests only |
 
 Other useful labels:
 | Label | Effect |
