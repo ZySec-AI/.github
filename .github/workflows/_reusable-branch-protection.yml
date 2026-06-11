@@ -85,8 +85,8 @@ jobs:
           #   "scan / Secret Scan (gitleaks)"
           #
           apply_protection "develop" '[
-            "Branch name + merge flow",
-            "Validate PR metadata",
+            "branch-checks / Branch name + merge flow",
+            "validate / Validate PR metadata",
             "gates / Quality Gate",
             "scan / Secret Scan (gitleaks)"
           ]'
