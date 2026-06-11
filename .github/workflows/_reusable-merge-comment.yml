@@ -62,7 +62,7 @@ All checks below are **automated and enforced**. Review them now so you're not b
 | Branch name convention | Doesn't match \`type/description\` (e.g. \`feat/my-feature\`) |
 | Merge flow | Invalid source → target (feature branches must target \`develop\`) |
 | PR description | Body is empty or < 20 chars |
-| PR label | No \`type:feature\`, \`type:bug\`, \`type:chore\`, or \`type:docs\` label |
+| PR label | No type label (\`bug\`, \`feature\`, \`chore\`, \`docs\`, or \`type:*\`) |
 | Approving review | At least 1 approval required |
 | Resolved conversations | All comments must be resolved |
 

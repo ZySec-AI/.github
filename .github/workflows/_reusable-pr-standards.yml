@@ -48,13 +48,14 @@ jobs:
           HAS_TYPE=false
           for label in $LABELS; do
             case "$label" in
-              type:*) HAS_TYPE=true ;;
+              type:bug|type:feature|type:chore|type:docs|type:question) HAS_TYPE=true ;;
+              bug|feature|chore|docs|documentation|enhancement|question) HAS_TYPE=true ;;
             esac
           done
 
           if ! $HAS_TYPE; then
-            echo "❌ PR must have a type label: type:feature, type:bug, type:chore, type:docs"
-            echo "   (Use 'type:bug' — not plain 'bug')"
+            echo "❌ PR must have a type label, e.g. bug, feature, chore, docs"
+            echo "   (type:bug and type:feature also accepted)"
             exit 1
           fi
           echo "✓ type label present"
