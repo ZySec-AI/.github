@@ -11,13 +11,13 @@ on:
         default: 'CRITICAL'
     secrets:
       LLM_PROVIDER:
-        required: false   # MINIMAX | ZAI | ANTHROPIC
+        required: false   # optional label for logs (openrouter, minimax, self-hosted, etc.)
       LLM_API_KEY:
         required: true
       LLM_BASE_URL:
-        required: false   # org secret — overrides provider default URL
+        required: true    # Anthropic-compatible API base URL — set per org in GitHub secrets
       LLM_MODEL:
-        required: false
+        required: true    # model ID at that endpoint — set per org in GitHub secrets
       ORG_ADMIN_TOKEN:
         required: false
 
@@ -32,7 +32,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve provider config
+      - name: Validate LLM config
         id: provider
         env:
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
@@ -44,68 +44,22 @@ jobs:
             exit 1
           fi
 
-          PROVIDER=$(echo "${LLM_PROVIDER:-ZAI}" | tr '[:lower:]' '[:upper:]' | tr -d ' \t\r\n')
           BASE_URL=$(echo "${LLM_BASE_URL}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          MODEL=$(echo "${LLM_MODEL}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          PROVIDER=$(echo "${LLM_PROVIDER:-custom}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
           if [ -z "$BASE_URL" ]; then
-            case "$PROVIDER" in
-              MINIMAX) BASE_URL="https://api.minimax.io/anthropic" ;;
-              ZAI)     BASE_URL="https://api.z.ai/api/anthropic" ;;
-              ANTHROPIC) BASE_URL="https://api.anthropic.com" ;;
-              *)
-                echo "❌ Unknown LLM_PROVIDER: '$PROVIDER' (set LLM_BASE_URL or use MINIMAX | ZAI | ANTHROPIC)" >&2
-                exit 1
-                ;;
-            esac
-          else
-            # LLM_BASE_URL wins — infer provider so model defaults match the endpoint
-            case "$BASE_URL" in
-              *z.ai*) PROVIDER="ZAI" ;;
-              *minimax*) PROVIDER="MINIMAX" ;;
-              *anthropic.com*) PROVIDER="ANTHROPIC" ;;
-            esac
+            echo "❌ LLM_BASE_URL org secret is required (e.g. https://api.z.ai/api/anthropic)" >&2
+            exit 1
           fi
-
-          case "$PROVIDER" in
-            MINIMAX)   MODEL_DEFAULT="MiniMax-M2.7" ;;
-            ZAI)       MODEL_DEFAULT="glm-5.1" ;;
-            ANTHROPIC) MODEL_DEFAULT="claude-sonnet-4-6" ;;
-            *)         MODEL_DEFAULT="glm-5.1" ;;
-          esac
-
-          MODEL=$(echo "${LLM_MODEL}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-          MODEL="${MODEL:-$MODEL_DEFAULT}"
-
-          # z.ai expects lowercase glm-* model IDs in Claude Code
-          case "$PROVIDER" in
-            ZAI) MODEL=$(echo "$MODEL" | tr '[:upper:]' '[:lower:]') ;;
-          esac
-
-          # Org secrets often drift (e.g. MiniMax model left after switching to ZAI)
-          case "$PROVIDER" in
-            ZAI)
-              if echo "$MODEL" | grep -qiE 'minimax|claude'; then
-                echo "⚠ LLM_MODEL '$MODEL' incompatible with ZAI — using $MODEL_DEFAULT" >&2
-                MODEL="$MODEL_DEFAULT"
-              fi
-              ;;
-            MINIMAX)
-              if echo "$MODEL" | grep -qiE '^glm|claude'; then
-                echo "⚠ LLM_MODEL '$MODEL' incompatible with MINIMAX — using $MODEL_DEFAULT" >&2
-                MODEL="$MODEL_DEFAULT"
-              fi
-              ;;
-            ANTHROPIC)
-              if echo "$MODEL" | grep -qiE '^glm|minimax'; then
-                echo "⚠ LLM_MODEL '$MODEL' incompatible with ANTHROPIC — using $MODEL_DEFAULT" >&2
-                MODEL="$MODEL_DEFAULT"
-              fi
-              ;;
-          esac
+          if [ -z "$MODEL" ]; then
+            echo "❌ LLM_MODEL org secret is required (e.g. glm-5.1, MiniMax-M2.7, anthropic/claude-sonnet-4)" >&2
+            exit 1
+          fi
 
           echo "base_url=$BASE_URL" >> $GITHUB_OUTPUT
           echo "model=$MODEL"       >> $GITHUB_OUTPUT
-          echo "✓ Provider: $PROVIDER | Model: $MODEL @ $BASE_URL"
+          echo "✓ LLM provider label: $PROVIDER | model: $MODEL @ $BASE_URL"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
