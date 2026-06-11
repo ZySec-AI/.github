@@ -3,7 +3,7 @@
 # PURPOSE:  Daily sync of standard workflow wrapper files from canonical
 #           templates in this repo. Opens PRs for repos with drift.
 # TRIGGER:  Daily at 07:17 UTC | manual dispatch
-# CONTACT:  platform-eng@zysec.ai
+# SECRETS:  ORG_ADMIN_TOKEN (org secret, visibility: all repos; scopes: repo, workflow)
 # =============================================================================
 name: Workflow Sync
 
@@ -32,10 +32,20 @@ jobs:
     outputs:
       repos: ${{ steps.repos.outputs.repos }}
     steps:
+      - name: Verify org admin token
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::ORG_ADMIN_TOKEN is empty or not visible to this repo."
+            exit 1
+          fi
+          gh auth status
+
       - name: List repos
         id: repos
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           if [ -n "${{ inputs.repos }}" ]; then
             REPOS=$(echo "${{ inputs.repos }}" | tr ',' '\n' | jq -R . | jq -s -c .)
@@ -64,7 +74,7 @@ jobs:
 
       - name: Clone target repo
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository_owner }}/${{ matrix.repo }}.git" target
           cd target
@@ -112,7 +122,7 @@ jobs:
       - name: Create sync PR
         if: steps.drift.outputs.drift == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run || false }}
         run: |
           cd target
