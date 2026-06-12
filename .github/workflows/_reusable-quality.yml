@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       auto_detect:
-        description: 'Detect Python/Node/Rust from repo files (recommended)'
+        description: 'Run the detect job to auto-detect language stacks. Set false if caller provides python/node/rust inputs.'
         type: boolean
         default: true
       python:
