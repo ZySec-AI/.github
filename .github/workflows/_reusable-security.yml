@@ -170,6 +170,7 @@ jobs:
     name: Trivy - filesystem scan
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       security-events: write
     steps:
@@ -199,6 +200,7 @@ jobs:
       )
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       security-events: write
     steps:

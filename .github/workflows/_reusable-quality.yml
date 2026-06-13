@@ -45,7 +45,14 @@ jobs:
       - id: detect
         run: |
           echo "python=$(find . -name 'requirements*.txt' -o -name 'pyproject.toml' -o -name 'setup.py' | head -1 | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
-          echo "node=$(find . -name 'package.json' | head -1 | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          # The node-quality job runs from the repository root. Nested frontend
+          # packages should use their own workflow instead of being auto-detected
+          # here and then failing root-level setup/install steps.
+          if [ -f package.json ] || [ -f next.config.ts ] || [ -f next.config.js ] || [ -f next.config.mjs ]; then
+            echo "node=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "node=0" >> "$GITHUB_OUTPUT"
+          fi
           echo "rust=$(find . -name 'Cargo.toml' | head -1 | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
   python-quality:
@@ -139,20 +146,34 @@ jobs:
           else pm=npm
           fi
 
+          lockfile=0
+          if [ -f pnpm-lock.yaml ] || [ -f yarn.lock ] || [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            lockfile=1
+          fi
+
           echo "nextjs=$nextjs" >> "$GITHUB_OUTPUT"
           echo "prisma=$prisma" >> "$GITHUB_OUTPUT"
           echo "pm=$pm" >> "$GITHUB_OUTPUT"
-          echo "Detected: nextjs=$nextjs prisma=$prisma pm=$pm"
+          echo "lockfile=$lockfile" >> "$GITHUB_OUTPUT"
+          echo "Detected: nextjs=$nextjs prisma=$prisma pm=$pm lockfile=$lockfile"
 
       - uses: pnpm/action-setup@v4
         if: steps.stack.outputs.pm == 'pnpm'
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node with package-manager cache
+        if: steps.stack.outputs.lockfile == '1'
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
           cache: ${{ steps.stack.outputs.pm }}
+
+      - name: Setup Node without package-manager cache
+        if: steps.stack.outputs.lockfile != '1'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
 
       - name: Install dependencies
         run: |
