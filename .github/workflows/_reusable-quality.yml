@@ -44,7 +44,11 @@ jobs:
           fetch-depth: 1
       - id: detect
         run: |
-          echo "python=$(find . -name 'requirements*.txt' -o -name 'pyproject.toml' -o -name 'setup.py' | head -1 | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          python=0
+          for f in requirements.txt requirements-dev.txt requirements-prod.txt requirements-test.txt pyproject.toml setup.py; do
+            if [ -f "$f" ]; then python=1; break; fi
+          done
+          echo "python=$python" >> "$GITHUB_OUTPUT"
           # The node-quality job runs from the repository root. Nested frontend
           # packages should use their own workflow instead of being auto-detected
           # here and then failing root-level setup/install steps.
@@ -53,7 +57,7 @@ jobs:
           else
             echo "node=0" >> "$GITHUB_OUTPUT"
           fi
-          echo "rust=$(find . -name 'Cargo.toml' | head -1 | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "rust=$([ -f Cargo.toml ] && echo 1 || echo 0)" >> "$GITHUB_OUTPUT"
 
   python-quality:
     name: Python — lint / type / coverage
