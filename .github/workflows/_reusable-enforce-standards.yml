@@ -1,0 +1,149 @@
+# =============================================================================
+# REUSABLE WORKFLOW: Enforce Label & Milestone Standards
+# PURPOSE:  Auto-deletes non-canonical labels and milestones the moment they
+#           are created, and opens a guide issue so the creator knows what to
+#           use instead. Keeps all repos aligned to the org-wide standard.
+# TRIGGERS: Called by enforce-standards.yml in each product repo.
+# DOCS:     https://github.com/ZySec-AI/.github/blob/main/.github/labels/labels.json
+# =============================================================================
+name: _reusable — Enforce Standards
+
+on:
+  workflow_call:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  enforce-label:
+    if: github.event_name == 'label' && github.event.action == 'created'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block non-canonical label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const BLOCKED_EXACT = new Set([
+              // Old priority/severity variants
+              'critical','high','medium','low',
+              'severity:critical','severity:high','severity:medium','severity:low',
+              'severity/high','severity/medium','severity/low',
+              'priority/p0-critical','priority/p1-high','priority/p2-normal','priority/p3-low',
+              // Old type variants
+              'bug','feature','enhancement','documentation','chore','refactor',
+              'type/bug','type/feature','type/docs','type/chore','type/refactor',
+              // Old status variants
+              'status/blocked','blocked-on-sdk-team',
+              // Old dimension/area variants
+              'dimension:security','dimension:quality','dimension:deps','dimension:ui','dimension:perf',
+              'area:security','area/security','type/security',
+              'area:docs','area/docs','area:features',
+            ]);
+
+            const BLOCKED_PATTERNS = [
+              /^severity:/i,
+              /^priority\//i,
+              /^type\//i,
+              /^dimension:/i,
+              /^area\/(docs|security)$/i,
+            ];
+
+            const name = context.payload.label.name;
+            const isBlocked = BLOCKED_EXACT.has(name) ||
+              BLOCKED_PATTERNS.some(p => p.test(name));
+
+            if (!isBlocked) {
+              core.info(`Label "${name}" is within standards — no action needed.`);
+              return;
+            }
+
+            core.warning(`Non-standard label "${name}" detected — deleting.`);
+
+            await github.rest.issues.deleteLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name,
+            });
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🏷️ Non-standard label blocked: "${name}"`,
+              labels: ['type:chore'],
+              body: [
+                `## Label \`${name}\` was automatically removed`,
+                '',
+                `This label does not conform to the org-wide label standard and has been deleted.`,
+                '',
+                '### Canonical label reference',
+                '',
+                '| Category | Labels |',
+                '|----------|--------|',
+                '| Priority | `priority:p0` `priority:p1` `priority:p2` `priority:p3` |',
+                '| Type | `type:bug` `type:feature` `type:docs` `type:chore` `type:refactor` `type:test` `type:security` |',
+                '| Status | `status:blocked` `status:in-progress` `status:needs-review` `status:wontfix` |',
+                '| Lifecycle | `epic` `release-blocker` `needs-info` `good-first-issue` `duplicate` |',
+                '| Bot | `bot:fix-please` `bot:skip` `bot:fixed` `bot:low-confidence` `bot:reviewed` |',
+                '',
+                '> Full spec: https://github.com/ZySec-AI/.github/blob/main/.github/labels/labels.json',
+              ].join('\n'),
+            });
+
+  enforce-milestone:
+    if: github.event_name == 'milestone' && github.event.action == 'created'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block non-canonical milestone
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const CANONICAL_MILESTONES = new Set([
+              'v0.1 — Foundation',
+              'v0.2 — Governance',
+              'v0.3 — Runtime',
+              'v0.4 — Intelligence',
+              'v0.5 — Scale & Polish',
+              'v1.0 — GA',
+            ]);
+
+            const title  = context.payload.milestone.title;
+            const number = context.payload.milestone.number;
+
+            if (CANONICAL_MILESTONES.has(title)) {
+              core.info(`Milestone "${title}" is canonical — no action needed.`);
+              return;
+            }
+
+            core.warning(`Non-standard milestone "${title}" detected — deleting.`);
+
+            await github.rest.issues.deleteMilestone({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              milestone_number: number,
+            });
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🗓️ Non-standard milestone blocked: "${title}"`,
+              labels: ['type:chore'],
+              body: [
+                `## Milestone \`${title}\` was automatically removed`,
+                '',
+                'Milestones must match the org-wide release roadmap. The six canonical milestones are:',
+                '',
+                '| Milestone | What ships in it |',
+                '|-----------|-----------------|',
+                '| `v0.1 — Foundation` | Auth, multi-tenancy, and security baseline |',
+                '| `v0.2 — Governance` | AI gateway, policy enforcement, audit trail, and compliance |',
+                '| `v0.3 — Runtime` | App runtime, workflows, search, and core apps |',
+                '| `v0.4 — Intelligence` | Advanced apps, EDM integrations, and analytics |',
+                '| `v0.5 — Scale & Polish` | Performance, load testing, UX polish, and pre-GA cleanup |',
+                '| `v1.0 — GA` | SOC 2, ISO 27001, pen-test sign-off, and enterprise certification |',
+                '',
+                'If you need to track work outside these milestones, use **labels** (`epic`, `priority:p0`) or the **GitHub Project** board instead.',
+                '',
+                '> Milestone standard: https://github.com/ZySec-AI/.github',
+              ].join('\n'),
+            });
