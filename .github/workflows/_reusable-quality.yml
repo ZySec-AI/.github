@@ -161,8 +161,17 @@ jobs:
           echo "lockfile=$lockfile" >> "$GITHUB_OUTPUT"
           echo "Detected: nextjs=$nextjs prisma=$prisma pm=$pm lockfile=$lockfile"
 
+      - name: Detect pnpm version
+        id: pnpm-ver
+        if: steps.stack.outputs.pm == 'pnpm'
+        run: |
+          VER=$(node -pe "require('./package.json').packageManager || ''" 2>/dev/null | sed 's/pnpm@//' | tr -d '\n')
+          echo "version=${VER:-9}" >> $GITHUB_OUTPUT
+
       - uses: pnpm/action-setup@v4
         if: steps.stack.outputs.pm == 'pnpm'
+        with:
+          version: ${{ steps.pnpm-ver.outputs.version }}
 
       - name: Setup Node with package-manager cache
         if: steps.stack.outputs.lockfile == '1'
