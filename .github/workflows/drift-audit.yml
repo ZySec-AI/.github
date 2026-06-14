@@ -1,0 +1,133 @@
+# =============================================================================
+# WORKFLOW: Drift Audit (org-wide, read-only)
+# PURPOSE:  Weekly audit: compare each repo's actual workflow set against the
+#           repo-policy.yml allowlist. Opens **one org-level summary issue**
+#           in this repo if drift exists. Does NOT open per-repo PRs (that's
+#           workflow-sync.yml's job, triggered on policy change).
+# TRIGGER:  Weekly Monday 08:30 UTC | manual dispatch
+# SECRETS:  ORG_ADMIN_TOKEN
+# =============================================================================
+name: Drift Audit (org-wide)
+
+on:
+  schedule:
+    - cron: '30 8 * * 1'    # weekly Monday 08:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: drift-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout policy
+        uses: actions/checkout@v4
+
+      - name: Run drift audit
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+          ORG: ZySec-AI
+        run: |
+          set -euo pipefail
+          echo "## Drift Audit — $(date -u +%Y-%m-%d)" > /tmp/audit.md
+          echo "" >> /tmp/audit.md
+          echo "Comparing each non-archived repo against \`.github/repo-policy.yml\`." >> /tmp/audit.md
+          echo "" >> /tmp/audit.md
+
+          # Extract allowlist sections from policy
+          python3 <<'PY' > /tmp/policy.json
+          import yaml, json, sys
+          with open('.github/repo-policy.yml') as f:
+              p = yaml.safe_load(f)
+          required = set(p['wrapper_workflows']['required'])
+          optional = set(p['wrapper_workflows']['optional'])
+          unique = p.get('unique_workflow_allowlist', {})
+          out = {'required': sorted(required), 'optional': sorted(optional), 'unique': unique}
+          print(json.dumps(out))
+          PY
+
+          REPOS=$(gh repo list "$ORG" --no-archived --limit 200 --json name --jq '.[].name')
+          drift_found=0
+
+          for repo in $REPOS; do
+            # skip the org repo itself
+            [ "$repo" = ".github" ] && continue
+
+            # fetch this repo's workflow files
+            wfs=$(gh api "repos/$ORG/$repo/contents/.github/workflows" --jq '.[].name' 2>/dev/null || echo "")
+            [ -z "$wfs" ] && continue
+
+            unique_allow=$(python3 -c "import json; p=json.load(open('/tmp/policy.json')); print(' '.join(p['unique'].get('$repo', [])))")
+            required_set=$(python3 -c "import json; p=json.load(open('/tmp/policy.json')); print(' '.join(p['required']))")
+            optional_set=$(python3 -c "import json; p=json.load(open('/tmp/policy.json')); print(' '.join(p['optional']))")
+
+            extras=""
+            for wf in $wfs; do
+              base="${wf%.yml}"; base="${base%.yaml}"
+              # _reusable-* are engines, skip
+              [[ "$base" == _reusable-* ]] && continue
+              # check membership
+              if [[ ! " $required_set $optional_set $unique_allow " =~ " $base " ]]; then
+                extras="$extras $base"
+              fi
+            done
+
+            missing_required=""
+            for req in $required_set; do
+              if ! echo "$wfs" | grep -qE "^${req}\.ya?ml$"; then
+                missing_required="$missing_required $req"
+              fi
+            done
+
+            if [ -n "$extras" ] || [ -n "$missing_required" ]; then
+              drift_found=1
+              echo "### $repo" >> /tmp/audit.md
+              [ -n "$missing_required" ] && echo "- ❌ **missing required**:$missing_required" >> /tmp/audit.md
+              [ -n "$extras" ] && echo "- ⚠️  **extra (not in allowlist)**:$extras" >> /tmp/audit.md
+              echo "" >> /tmp/audit.md
+            fi
+          done
+
+          if [ "$drift_found" = "0" ]; then
+            echo "✅ No drift detected. All repos conform to policy." >> /tmp/audit.md
+          fi
+
+          cat /tmp/audit.md
+          echo "DRIFT_FOUND=$drift_found" >> "$GITHUB_ENV"
+
+      - name: Open or update drift summary issue
+        if: env.DRIFT_FOUND == '1'
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          TITLE="Drift Audit — $(date -u +%Y-%m-%d)"
+          BODY=$(cat /tmp/audit.md)
+          # find existing open drift-audit issue from this calendar month
+          existing=$(gh issue list --repo ZySec-AI/.github --state open \
+                     --label drift-audit --json number,title \
+                     --jq ".[] | select(.title | startswith(\"Drift Audit — $(date -u +%Y-%m)\")) | .number" \
+                     | head -1)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo ZySec-AI/.github --body "$BODY"
+          else
+            gh issue create --repo ZySec-AI/.github \
+              --title "$TITLE" \
+              --label "drift-audit,governance" \
+              --body "$BODY"
+          fi
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "## Drift audit summary"
+            echo ""
+            cat /tmp/audit.md
+          } >> "$GITHUB_STEP_SUMMARY"

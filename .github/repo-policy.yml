@@ -1,0 +1,161 @@
+# =============================================================================
+# Org-Wide Repo Policy — Single Source of Truth
+# Consumed by: workflow-sync.yml, new-repo-bootstrap.yml, drift-audit.yml
+# =============================================================================
+version: 1
+
+# --- Branch naming -----------------------------------------------------------
+# Enforced as a GitHub repository ruleset at the org level (not per-repo).
+branch_naming:
+  prefixes:
+    - feat
+    - feature
+    - fix
+    - bugfix
+    - bug
+    - hotfix
+    - chore
+    - docs
+    - doc
+    - documentation
+    - refactor
+    - test
+    - tests
+    - perf
+    - performance
+    - build
+    - ci
+    - cd
+    - cicd
+    - revert
+    - release-prep
+    - support
+    - experiment
+    - spike
+    - infra
+  body_pattern: '[a-z0-9.-]+'
+  examples:
+    - feat/oauth-login
+    - fix/cors-leak
+    - chore/bump-deps
+    - infra/ci-centralize
+
+# --- Required status checks --------------------------------------------------
+required_status_checks:
+  develop:
+    - 'gates / Quality Gate'
+    - 'scan / Secret Scan (gitleaks)'
+    - 'branch-checks / Branch name + merge flow'
+    - 'validate / Validate PR metadata'
+    - 'arch-lint'                                       # added 2026-06-14 from 0.1.3 work
+  release:
+    extends_from: develop
+    add:
+      - 'AI Code Review (blocking on HIGH+)'
+      - 'full-security / Full Security Gate (non-hotfix)'
+
+protected_branches:
+  - develop
+  - release
+required_reviews: 1
+strict_status_checks: true
+
+# --- Workflow defaults across all child repos --------------------------------
+paths_ignore_heavy_workflows:
+  - '**.md'
+  - 'docs/**'
+  - 'LICENSE'
+  - '.gitignore'
+
+concurrency:
+  group_template: '${{ github.workflow }}-${{ github.ref }}'
+  cancel_in_progress_except: [release]
+
+# --- Forbidden patterns (rejected by drift-audit.yml) ------------------------
+forbidden:
+  # Silent skips on security/governance are always a bug
+  continue_on_error_categories:
+    - security
+    - governance
+  # Daily-cron syncs are noise; use event-driven
+  daily_cron_for_non_critical: true
+
+# --- Per-repo wrapper allowlist ----------------------------------------------
+# These are the *only* wrappers a repo should keep. Anything outside this set
+# is flagged by drift-audit.yml.
+wrapper_workflows:
+  required:
+    - quality
+    - security
+    - pr-standards
+    - code-review-pr
+    - arch-lint
+    - release
+    - check-license
+    - hotfix-security
+    - branch-flow-check        # to be removed once org ruleset is live
+    - enforce-standards
+    - stale
+    - dependabot-auto-merge
+    - lint-workflows
+  optional:
+    - api-contract
+    - parity-tests
+    - docs-validation
+    - frontend-checks
+    - nightly
+    - manual-dev-deploy
+    - deploy-vercel
+
+# --- Repo-specific unique workflows (escape hatch) ---------------------------
+# Only these unique workflows are tolerated per repo. Everything else is drift.
+unique_workflow_allowlist:
+  core-sdk:
+    - cargo-deny
+    - proto-lint
+    - policy
+    - sdk-sync
+    - docker-build
+  coreiq:
+    - coreiq-eval
+    - docker-build-push
+  cpod-backend:
+    - ci             # the main build pipeline (separate from quality.yml)
+    - build-push-image
+  cpod-ui:
+    - docker-build-push
+  cpod-arai:
+    - build-docker
+  cpod-sdk:
+    - check-release-scope
+    - verify-publish
+    - publish-typescript
+    - publish-python
+    - publish-go
+    - publish-dotnet
+    - publish-registries
+    - sync-public-repo
+  app-store:
+    - sync-helm
+    - build-push
+  deployments:
+    - helm-lint
+    - contract-validation
+  datagrep:
+    - ci             # repo's primary build pipeline
+
+# --- Stale policy ------------------------------------------------------------
+stale:
+  issue_pr:
+    stale_days: 7
+    close_days: 7                     # total: 14d inactive → closed
+    exempt_pr_labels: [bot-skip, hotfix, type:docs, pinned, security]
+    exempt_issue_labels: [bot-skip, severity:critical, severity:high, pinned, epic]
+  branches:
+    max_age_days: 21
+    exempt_prefixes: [backup-, backup/, release-]
+    exempt_with_open_pr: true
+
+# --- Reusable workflow references --------------------------------------------
+# Standard ref child repos should pin to. Bumped only on coordinated releases.
+reusable_ref: develop

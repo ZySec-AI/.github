@@ -1,37 +1,180 @@
-name: stale notifier (reusable)
+name: stale notifier + branch sweeper (reusable)
+
+# =============================================================================
+# PURPOSE
+# -------
+# 1. Issues / PRs: no activity for 14 days → warn at day 7, close at day 14
+# 2. Branches:    no commit  for 21 days → delete
+#                 EXCEPT:    protected branches (develop/release/main/stage)
+#                            branches matching backup-*  or  backup/*
+#                            branches with an open PR
+#
+# Inputs:
+#   dry_run (bool, default: false) — log actions but make no changes.
+#                                    First run on a repo SHOULD be dry_run=true.
+# =============================================================================
 
 on:
   workflow_call:
+    inputs:
+      dry_run:
+        description: 'Log actions but make no changes (true on first run)'
+        type: boolean
+        default: false
+      branch_max_age_days:
+        description: 'Delete branches inactive this many days (default 21)'
+        type: number
+        default: 21
+      issue_pr_stale_days:
+        description: 'Mark issues/PRs stale after this many days (default 7)'
+        type: number
+        default: 7
+      issue_pr_close_days:
+        description: 'Close stale items this many extra days later (default 7) — total 14'
+        type: number
+        default: 7
 
 permissions:
   pull-requests: write
   issues: write
+  contents: write          # required to delete branches
 
 jobs:
-  stale:
-    name: Mark stale items
+  # ---------------------------------------------------------------------------
+  # Issues / PRs — 14-day close policy
+  # ---------------------------------------------------------------------------
+  stale_items:
+    name: Stale issues + PRs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/stale@v9
         with:
           repo-token: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
-          days-before-pr-stale: 2
-          days-before-pr-close: 5
+          # PR policy
+          days-before-pr-stale: ${{ inputs.issue_pr_stale_days }}
+          days-before-pr-close: ${{ inputs.issue_pr_close_days }}
           stale-pr-label: 'needs-review'
           stale-pr-message: |
-            ⏰ This PR has had no activity for 2 days.
-            Per ZySec AI standards, PRs should be reviewed within 24 hours.
-            Please review or request a reviewer.
+            ⏰ This PR has had no activity for ${{ inputs.issue_pr_stale_days }} days.
+            It will be closed in ${{ inputs.issue_pr_close_days }} more days
+            (total ${{ fromJson(inputs.issue_pr_stale_days) + fromJson(inputs.issue_pr_close_days) }} days inactive)
+            unless there is a new comment, commit, or label change.
           close-pr-message: |
-            This PR has been closed due to 5 days of inactivity.
-            Re-open if still relevant.
-          days-before-issue-stale: 7
-          days-before-issue-close: 14
+            Closed due to ${{ fromJson(inputs.issue_pr_stale_days) + fromJson(inputs.issue_pr_close_days) }} days
+            of no activity. Re-open if still relevant.
+
+          # Issue policy
+          days-before-issue-stale: ${{ inputs.issue_pr_stale_days }}
+          days-before-issue-close: ${{ inputs.issue_pr_close_days }}
           stale-issue-label: 'needs-info'
           stale-issue-message: |
-            ⏰ This issue has had no activity for 7 days.
-            Please provide an update or close if resolved.
+            ⏰ This issue has had no activity for ${{ inputs.issue_pr_stale_days }} days.
+            It will be closed in ${{ inputs.issue_pr_close_days }} more days
+            unless there is a new comment, label change, or assignment.
           close-issue-message: |
-            This issue has been closed due to 14 days of inactivity.
-          exempt-pr-labels: 'bot-skip,hotfix,type:docs'
-          exempt-issue-labels: 'bot-skip,severity:critical,severity:high'
+            Closed due to ${{ fromJson(inputs.issue_pr_stale_days) + fromJson(inputs.issue_pr_close_days) }} days
+            of no activity. Re-open if still relevant.
+
+          # Exemptions
+          exempt-pr-labels: 'bot-skip,hotfix,type:docs,pinned,security'
+          exempt-issue-labels: 'bot-skip,severity:critical,severity:high,pinned,epic'
+
+          # Operational
+          operations-per-run: 100
+          debug-only: ${{ inputs.dry_run }}     # actions/stale honours this for logs-only mode
+
+  # ---------------------------------------------------------------------------
+  # Branches — 21-day delete policy with exemptions
+  # ---------------------------------------------------------------------------
+  stale_branches:
+    name: Delete stale branches
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Sweep branches
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+          REPO: ${{ github.repository }}
+          MAX_AGE: ${{ inputs.branch_max_age_days }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          echo "Repo: $REPO"
+          echo "Max age (days): $MAX_AGE"
+          echo "Dry run: $DRY_RUN"
+
+          cutoff=$(date -u -d "$MAX_AGE days ago" +%s)
+          echo "Cutoff timestamp (UTC): $cutoff"
+
+          # Gather all open-PR head refs (so we never delete a branch with an open PR)
+          open_pr_heads=$(gh pr list --repo "$REPO" --state open --json headRefName \
+                          --jq '.[].headRefName' | sort -u)
+
+          # Page through all remote branches
+          deleted=0
+          kept_protected=0
+          kept_backup=0
+          kept_pr=0
+          kept_recent=0
+          page=1
+          while :; do
+            chunk=$(gh api "repos/$REPO/branches?per_page=100&page=$page" --jq '.[].name')
+            [ -z "$chunk" ] && break
+
+            while IFS= read -r name; do
+              [ -z "$name" ] && continue
+
+              # 1. Protected/system branches — always keep
+              case "$name" in
+                develop|release|main|master|stage)
+                  kept_protected=$((kept_protected + 1)); continue ;;
+                backup-*|backup/*)
+                  kept_backup=$((kept_backup + 1)); continue ;;
+                dependabot/*)
+                  # Let dependabot manage its own branches via auto-merge or PR close
+                  kept_protected=$((kept_protected + 1)); continue ;;
+              esac
+
+              # 2. Open PR? keep
+              if echo "$open_pr_heads" | grep -qx "$name"; then
+                kept_pr=$((kept_pr + 1)); continue
+              fi
+
+              # 3. Recent commit? keep
+              ts=$(gh api "repos/$REPO/branches/$name" \
+                   --jq '.commit.commit.committer.date' 2>/dev/null \
+                   | xargs -I{} date -u -d "{}" +%s 2>/dev/null || echo 0)
+              if [ "$ts" -ge "$cutoff" ]; then
+                kept_recent=$((kept_recent + 1)); continue
+              fi
+
+              # 4. Delete (or log)
+              age_days=$(( (cutoff + MAX_AGE * 86400 - ts) / 86400 ))
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "[DRY] would delete $name (age ${age_days}d)"
+              else
+                echo "deleting $name (age ${age_days}d)"
+                gh api -X DELETE "repos/$REPO/git/refs/heads/$name" || true
+              fi
+              deleted=$((deleted + 1))
+            done <<< "$chunk"
+            page=$((page + 1))
+          done
+
+          # Summary for the workflow run
+          {
+            echo "## Branch sweep summary"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| repo | $REPO |"
+            echo "| cutoff | ${MAX_AGE} days |"
+            echo "| dry_run | $DRY_RUN |"
+            echo "| deleted (or would-delete) | $deleted |"
+            echo "| kept: protected/system | $kept_protected |"
+            echo "| kept: backup-* | $kept_backup |"
+            echo "| kept: open PR attached | $kept_pr |"
+            echo "| kept: recent commit | $kept_recent |"
+          } >> "$GITHUB_STEP_SUMMARY"

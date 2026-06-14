@@ -48,6 +48,10 @@ on:
       TRIVY_TEAM_WEBHOOK:
         required: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/release' }}
+
 jobs:
   detect:
     name: Detect language stacks

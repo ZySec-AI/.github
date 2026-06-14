@@ -8,8 +8,12 @@
 name: Workflow Sync
 
 on:
-  schedule:
-    - cron: '17 7 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'workflow-templates/**'
+      - '.github/workflows/_reusable-*.yml'
+      - '.github/repo-policy.yml'
   workflow_dispatch:
     inputs:
       dry_run:

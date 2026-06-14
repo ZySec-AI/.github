@@ -6,6 +6,10 @@ on:
       ORG_ADMIN_TOKEN:
         required: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/release' }}
+
 permissions:
   pull-requests: write
   issues: write
