@@ -273,6 +273,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install Python dev libraries (required for PyO3 crates)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y python3-dev
+          echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
+
       - name: fmt check
         run: cargo fmt --all -- --check
 
