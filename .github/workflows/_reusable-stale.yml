@@ -47,6 +47,10 @@ jobs:
     name: Stale issues + PRs
     runs-on: ubuntu-latest
     steps:
+      - name: Calculate total days
+        id: calc
+        run: echo "total_days=$(( ${{ inputs.issue_pr_stale_days }} + ${{ inputs.issue_pr_close_days }} ))" >> "$GITHUB_OUTPUT"
+
       - uses: actions/stale@v9
         with:
           repo-token: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
@@ -57,10 +61,10 @@ jobs:
           stale-pr-message: |
             ⏰ This PR has had no activity for ${{ inputs.issue_pr_stale_days }} days.
             It will be closed in ${{ inputs.issue_pr_close_days }} more days
-            (total ${{ fromJson(inputs.issue_pr_stale_days) + fromJson(inputs.issue_pr_close_days) }} days inactive)
+            (total ${{ steps.calc.outputs.total_days }} days inactive)
             unless there is a new comment, commit, or label change.
           close-pr-message: |
-            Closed due to ${{ fromJson(inputs.issue_pr_stale_days) + fromJson(inputs.issue_pr_close_days) }} days
+            Closed due to ${{ steps.calc.outputs.total_days }} days
             of no activity. Re-open if still relevant.
 
           # Issue policy
@@ -70,9 +74,10 @@ jobs:
           stale-issue-message: |
             ⏰ This issue has had no activity for ${{ inputs.issue_pr_stale_days }} days.
             It will be closed in ${{ inputs.issue_pr_close_days }} more days
+            (total ${{ steps.calc.outputs.total_days }} days inactive)
             unless there is a new comment, label change, or assignment.
           close-issue-message: |
-            Closed due to ${{ fromJson(inputs.issue_pr_stale_days) + fromJson(inputs.issue_pr_close_days) }} days
+            Closed due to ${{ steps.calc.outputs.total_days }} days
             of no activity. Re-open if still relevant.
 
           # Exemptions
