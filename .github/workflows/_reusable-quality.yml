@@ -190,6 +190,14 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
 
+      - name: Configure Git Authentication
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "git+ssh://git@github.com/"
+          git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
+          git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+
       - name: Install dependencies
         run: |
           case "${{ steps.stack.outputs.pm }}" in
