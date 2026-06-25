@@ -90,6 +90,7 @@ jobs:
         run: |
           DRIFT=false
           TEMPLATES=(
+            develop.yml
             quality.yml
             security.yml
             hotfix-security.yml
@@ -134,6 +135,7 @@ jobs:
           git checkout -b "$BRANCH"
 
           TEMPLATES=(
+            develop.yml
             quality.yml
             security.yml
             hotfix-security.yml

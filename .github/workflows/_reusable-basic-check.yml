@@ -1,0 +1,72 @@
+# =============================================================================
+# WORKFLOW: Reusable - Basic Check (develop only)
+# PURPOSE:  Single-job lint gate for develop PRs. Target: <10s total.
+#           Detects stack and runs lint inline — no matrix, no test, no build.
+#           Full quality gates run on stage.
+# =============================================================================
+name: basic check (reusable)
+
+on:
+  workflow_call:
+
+concurrency:
+  group: basic-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Basic Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # ── Python ──────────────────────────────────────────────────────────────
+      - name: Python lint (ruff)
+        if: always()
+        run: |
+          found=0
+          for f in pyproject.toml requirements.txt requirements-dev.txt setup.py; do
+            [ -f "$f" ] && found=1 && break
+          done
+          [ "$found" = "0" ] && echo "No Python — skip" && exit 0
+          pip install -q ruff
+          ruff check . --output-format=github
+
+      # ── Node / TypeScript ───────────────────────────────────────────────────
+      - name: Node lint (eslint)
+        if: always()
+        run: |
+          [ -f package.json ] || { echo "No Node — skip"; exit 0; }
+          if [ -f pnpm-lock.yaml ]; then
+            npm install -g pnpm -q && pnpm install --frozen-lockfile -s
+            node -e "process.exit(require('./package.json').scripts?.lint?0:1)" 2>/dev/null \
+              && pnpm run lint || echo "No lint script — skip"
+          elif [ -f yarn.lock ]; then
+            yarn install --immutable -s 2>/dev/null
+            node -e "process.exit(require('./package.json').scripts?.lint?0:1)" 2>/dev/null \
+              && yarn lint || echo "No lint script — skip"
+          else
+            [ -f package-lock.json ] && npm ci -s || npm install -s
+            node -e "process.exit(require('./package.json').scripts?.lint?0:1)" 2>/dev/null \
+              && npm run lint || echo "No lint script — skip"
+          fi
+
+      # ── Rust ────────────────────────────────────────────────────────────────
+      - name: Rust fmt check
+        if: always()
+        run: |
+          [ -f Cargo.toml ] || { echo "No Rust — skip"; exit 0; }
+          rustup component add rustfmt 2>/dev/null
+          cargo fmt --all -- --check
+
+      # ── Shell ───────────────────────────────────────────────────────────────
+      - name: Shell lint (shellcheck)
+        if: always()
+        run: |
+          scripts=$(find . -name '*.sh' -not -path '*/node_modules/*' -not -path '*/.git/*')
+          [ -z "$scripts" ] && echo "No shell scripts — skip" && exit 0
+          sudo apt-get install -q -y shellcheck 2>/dev/null
+          echo "$scripts" | xargs shellcheck
