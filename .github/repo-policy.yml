@@ -43,15 +43,16 @@ branch_naming:
 # --- Required status checks --------------------------------------------------
 required_status_checks:
   develop:
-    - 'gates / Quality Gate'
-    - 'scan / Secret Scan (gitleaks)'
+    - 'lint / Basic Check'              # lint only, <10s, no tests/build/scan
     - 'branch-checks / Branch name + merge flow'
     - 'validate / Validate PR metadata'
-    - 'arch-lint'                                       # added 2026-06-14 from 0.1.3 work
+  stage:
+    - 'gates / Quality Gate'            # full suite: tests, coverage, build
+    - 'scan / Secret Scan (gitleaks)'
+    - 'AI Code Review (blocking on HIGH+)'
   release:
-    extends_from: develop
+    extends_from: stage
     add:
-      - 'AI Code Review (blocking on HIGH+)'
       - 'full-security / Full Security Gate (non-hotfix)'
 
 protected_branches:
@@ -85,6 +86,7 @@ forbidden:
 # is flagged by drift-audit.yml.
 wrapper_workflows:
   required:
+    - develop
     - quality
     - security
     - pr-standards
