@@ -133,7 +133,7 @@ jobs:
 
               # 1. Protected/system branches — always keep
               case "$name" in
-                develop|release|main|master|stage)
+                develop|release|stage)
                   kept_protected=$((kept_protected + 1)); continue ;;
                 backup-*|backup/*)
                   kept_backup=$((kept_backup + 1)); continue ;;

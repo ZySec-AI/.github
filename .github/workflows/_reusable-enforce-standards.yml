@@ -86,7 +86,7 @@ jobs:
                 '| Lifecycle | `epic` `release-blocker` `needs-info` `good-first-issue` `duplicate` |',
                 '| Bot | `bot:fix-please` `bot:skip` `bot:fixed` `bot:low-confidence` `bot:reviewed` |',
                 '',
-                '> Full spec: https://github.com/ZySec-AI/.github/blob/main/.github/labels/labels.json',
+                '> Full spec: https://github.com/ZySec-AI/.github/blob/develop/.github/labels/labels.json',
               ].join('\n'),
             });
 

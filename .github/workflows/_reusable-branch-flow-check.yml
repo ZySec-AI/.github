@@ -59,13 +59,6 @@ jobs:
               fi
               echo "❌ Only 'develop', 'stage', or 'hotfix/*' may merge into release"; exit 1
               ;;
-            main)
-              if [[ "$SRC" == "release" || "$SRC" =~ ^release/ || "$SRC" =~ ^hotfix/ ]]; then
-                echo "✓ $SRC → main"
-                exit 0
-              fi
-              echo "❌ Only 'release' or 'hotfix/*' may merge into main"; exit 1
-              ;;
             *)
               echo "❌ Unexpected target: $DST"; exit 1
               ;;
