@@ -1,0 +1,70 @@
+# =============================================================================
+# WORKFLOW: Reusable — Auto-Promote
+# PURPOSE:  Opens a promotion PR when a PR merges to develop or stage.
+#           develop merge → opens develop → stage PR (if none exists)
+#           stage merge   → opens stage → release PR (if none exists)
+# TRIGGERS: workflow_call (on pull_request closed+merged)
+# SECRETS:  ORG_ADMIN_TOKEN — needs pull-requests:write on the target repo
+# =============================================================================
+name: auto-promote (reusable)
+
+on:
+  workflow_call:
+    secrets:
+      ORG_ADMIN_TOKEN:
+        required: false
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  promote-to-stage:
+    name: Promote develop → stage
+    if: github.event.pull_request.merged == true && github.base_ref == 'develop'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open PR develop → stage
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          EXISTING=$(gh pr list --repo "$REPO" --base stage --head develop --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "✓ PR #$EXISTING already open: develop → stage"
+            exit 0
+          fi
+          gh pr create \
+            --repo "$REPO" \
+            --base stage \
+            --head develop \
+            --title "promote: develop → stage" \
+            --body "$(printf 'Auto-opened after merge of #${{ github.event.pull_request.number }} to develop.\n\nQA: validate on stage and apply the `qa-approved` label before promoting to release.')" \
+            --label "type:chore" \
+            && echo "✓ Opened develop → stage PR" \
+            || echo "⚠️ Could not open PR — no diff or missing permissions"
+
+  promote-to-release:
+    name: Promote stage → release
+    if: github.event.pull_request.merged == true && github.base_ref == 'stage'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open PR stage → release
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          EXISTING=$(gh pr list --repo "$REPO" --base release --head stage --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "✓ PR #$EXISTING already open: stage → release"
+            exit 0
+          fi
+          gh pr create \
+            --repo "$REPO" \
+            --base release \
+            --head stage \
+            --title "promote: stage → release" \
+            --body "$(printf 'Auto-opened after merge of #${{ github.event.pull_request.number }} to stage.\n\nRequires `qa-approved` label and 1 approval before merging to release.')" \
+            --label "type:chore" \
+            && echo "✓ Opened stage → release PR" \
+            || echo "⚠️ Could not open PR — no diff or missing permissions"

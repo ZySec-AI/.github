@@ -53,7 +53,7 @@ required_status_checks:
   release:
     extends_from: stage
     add:
-      - 'full-security / Full Security Gate (non-hotfix)'
+      - 'pr-release-full / Security Gate — release (full)'
 
 protected_branches:
   - develop
@@ -94,7 +94,7 @@ wrapper_workflows:
     - arch-lint
     - release
     - check-license
-    - hotfix-security
+    - auto-promote
     - branch-flow-check        # to be removed once org ruleset is live
     - enforce-standards
     - stale
