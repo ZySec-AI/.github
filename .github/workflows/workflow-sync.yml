@@ -9,7 +9,7 @@ name: Workflow Sync
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
     paths:
       - 'workflow-templates/**'
       - '.github/workflows/_reusable-*.yml'
