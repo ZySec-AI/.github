@@ -16,7 +16,7 @@ jobs:
         run: |
           BRANCH="${{ github.head_ref }}"
           PATTERN='^(feat|feature|fix|bugfix|bug|hotfix|chore|docs|doc|documentation|refactor|test|tests|perf|performance|build|ci|cd|cicd|revert|release-prep|support|experiment|spike|infra)/[a-z0-9][a-z0-9.-]*(/[a-z0-9][a-z0-9.-]*)?$'
-          EXEMPT='^(develop|stage|release|release/.+)$'
+          EXEMPT='^(develop(-v[0-9]+)?|stage|release|release/.+)$'
 
           if [[ "$BRANCH" =~ $EXEMPT ]] || [[ "$BRANCH" =~ $PATTERN ]]; then
             echo "✓ Branch name valid: $BRANCH"
