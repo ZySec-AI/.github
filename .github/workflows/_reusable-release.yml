@@ -156,8 +156,9 @@ jobs:
             echo "## Changes"
             echo ""
             if [ -s /tmp/pr_list.tsv ]; then
-              while IFS=$'\t' read -r num title; do
-                printf -- "- #%s %s\n" "$num" "$title"
+              while IFS=$'	' read -r num title; do
+                printf -- "- #%s %s
+" "$num" "$title"
               done < /tmp/pr_list.tsv
             else
               echo "- See commit history for changes"
@@ -183,7 +184,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628f2b799aa4d91fb8f  # v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: release-notes
           path: /tmp/
