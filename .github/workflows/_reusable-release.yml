@@ -157,8 +157,7 @@ jobs:
             echo ""
             if [ -s /tmp/pr_list.tsv ]; then
               while IFS=$'	' read -r num title; do
-                printf -- "- #%s %s
-" "$num" "$title"
+                printf -- "- #%s %s\n" "$num" "$title"
               done < /tmp/pr_list.tsv
             else
               echo "- See commit history for changes"
