@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ZySec-AI — Org 360° Audit</title>
+<style>
+:root {
+  --bg: oklch(15% 0.02 240);
+  --surface: oklch(20% 0.02 240);
+  --surface2: oklch(25% 0.02 240);
+  --accent: oklch(70% 0.15 200);
+  --green: oklch(65% 0.18 145);
+  --amber: oklch(75% 0.18 85);
+  --red: oklch(60% 0.2 25);
+  --text: oklch(90% 0.01 240);
+  --muted: oklch(60% 0.02 240);
+  --border: oklch(30% 0.02 240);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+a { color: var(--accent); }
+h1, h2, h3 { font-weight: 600; }
+header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 2rem; display: flex; align-items: center; gap: 2rem; flex-wrap: wrap; }
+.ring-wrap { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+.ring-wrap svg { transform: rotate(-90deg); }
+.ring-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1.6rem; font-weight: 700; }
+.ring-label small { font-size: 0.65rem; color: var(--muted); font-weight: 400; margin-top: 2px; }
+.header-text h1 { font-size: 1.5rem; }
+.header-text p { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
+main { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+section { margin-bottom: 2rem; }
+section > h2 { font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1rem; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+.card-title { font-weight: 600; }
+.badge { display: inline-block; padding: 0.2em 0.6em; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+.badge-green { background: color-mix(in oklch, var(--green) 20%, transparent); color: var(--green); }
+.badge-amber { background: color-mix(in oklch, var(--amber) 20%, transparent); color: var(--amber); }
+.badge-red { background: color-mix(in oklch, var(--red) 20%, transparent); color: var(--red); }
+.card ul { list-style: none; margin: 0.5rem 0; }
+.card ul li { color: var(--muted); font-size: 0.85rem; padding: 0.15rem 0; }
+.card ul li::before { content: "• "; }
+.rec { background: var(--surface2); border-radius: 4px; padding: 0.5rem 0.75rem; font-size: 0.82rem; margin-top: 0.75rem; color: var(--text); border-left: 3px solid var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+th { background: var(--surface2); color: var(--muted); font-weight: 600; text-align: left; padding: 0.6rem 0.75rem; cursor: pointer; user-select: none; white-space: nowrap; }
+th:hover { color: var(--text); }
+td { padding: 0.55rem 0.75rem; border-top: 1px solid var(--border); }
+tr.row-red td { background: color-mix(in oklch, var(--red) 8%, transparent); }
+tr.row-amber td { background: color-mix(in oklch, var(--amber) 6%, transparent); }
+tr.row-green td { background: color-mix(in oklch, var(--green) 5%, transparent); }
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+.findings-list { list-style: none; }
+.findings-list li { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 0.5rem; display: flex; gap: 0.75rem; align-items: flex-start; }
+.sev { font-weight: 600; font-size: 0.75rem; padding: 0.15em 0.5em; border-radius: 3px; white-space: nowrap; margin-top: 2px; }
+.sev-Critical { background: color-mix(in oklch, var(--red) 25%, transparent); color: var(--red); }
+.sev-High { background: color-mix(in oklch, var(--amber) 20%, transparent); color: var(--amber); }
+.sev-Medium { background: color-mix(in oklch, var(--accent) 20%, transparent); color: var(--accent); }
+.sev-Low { background: color-mix(in oklch, var(--muted) 20%, transparent); color: var(--muted); }
+.finding-body p { color: var(--text); }
+.finding-body small { color: var(--muted); font-style: italic; }
+footer { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.8rem; border-top: 1px solid var(--border); }
+.bool-yes { color: var(--green); }
+.bool-no { color: var(--red); }
+</style>
+</head>
+<body>
+<header>
+  
+<div class="ring-wrap">
+  <svg width="120" height="120" viewBox="0 0 120 120">
+    <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" stroke-width="10"/>
+    <circle cx="60" cy="60" r="52" fill="none" stroke="var(--amber)" stroke-width="10"
+      stroke-dasharray="251.6 326.7" stroke-linecap="round"/>
+  </svg>
+  <div class="ring-label">77<small>/ 100</small></div>
+</div>
+  <div class="header-text">
+    <h1>ZySec-AI — Org 360° Audit</h1>
+    <p>Generated 2026-07-26 18:20 UTC &nbsp;·&nbsp; 58 repos &nbsp;·&nbsp; 26 members</p>
+    <p style="margin-top:0.5rem;font-size:0.8rem;color:var(--muted)">Overall score: <strong style="color:var(--text)">77 / 100</strong></p>
+  </div>
+</header>
+<main>
+  <section>
+    <h2>Section Scores</h2>
+    <div class="cards">
+      
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🟡 Security</span>
+    <span class="badge badge-amber">73</span>
+  </div>
+  <ul><li>2FA enforcement: ✗ disabled</li><li>Branch protection: 91% of repos</li><li>Dependabot alerts: 93% of repos</li></ul>
+  <div class="rec">Enable 2FA org-wide, add branch protection rules, and turn on Dependabot for all repos.</div>
+</div>
+      
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🟢 Repo Health</span>
+    <span class="badge badge-green">81</span>
+  </div>
+  <ul><li>Total repos: 58 (57 active, 1 archived)</li><li>Inactive (>90d no push): 1</li><li>Repos missing topics: 51</li></ul>
+  <div class="rec">Archive stale repos, add topics to all active repos, and review the inactive list quarterly.</div>
+</div>
+      
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🟡 CI/CD</span>
+    <span class="badge badge-amber">75</span>
+  </div>
+  <ul><li>Workflow coverage: 100% of active repos</li><li>30-day CI pass rate: 50%</li><li>Total runs (30d): 0</li></ul>
+  <div class="rec">Add CI workflows to all active repos and investigate chronic failures to improve pass rate.</div>
+</div>
+      
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🟢 Contributions</span>
+    <span class="badge badge-green">100</span>
+  </div>
+  <ul><li>Active contributors (30d): 100% of members</li><li>Total commits (30d, sampled): 577</li><li>Bus factor risk: No</li></ul>
+  <div class="rec">Distribute commit ownership and onboard co-maintainers to critical repos.</div>
+</div>
+      
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🟢 Org Governance</span>
+    <span class="badge badge-green">80</span>
+  </div>
+  <ul><li>Default repo permission: none</li><li>Members can create public repos: False</li><li>Plan: enterprise (29/30 seats)</li></ul>
+  <div class="rec">Set default permission to 'none', use teams, and restrict public repo creation to admins.</div>
+</div>
+      
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🔴 Engagement</span>
+    <span class="badge badge-red">35</span>
+  </div>
+  <ul><li>Repos with stars: 7</li><li>Public repos: 6</li><li>Avg open issues per repo: 20.2</li></ul>
+  <div class="rec">Improve docs and add topics/descriptions to boost discoverability and star count.</div>
+</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Repositories (58)</h2>
+    <div class="table-wrap">
+      <table id="repo-table">
+        <thead>
+          <tr>
+            <th>Name</th><th>Visibility</th><th>Branch Protected</th>
+            <th>Dependabot</th><th>Workflows</th><th>Last Push</th>
+            <th>30d Commits</th><th>Open Issues</th><th>Score</th>
+          </tr>
+        </thead>
+        <tbody><tr class="row-green"><td><a href="https://github.com/ZySec-AI/project-zysec" target="_blank">project-zysec</a></td><td>public</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="13">13</td><td data-val="2026-07-11T09:18:31Z">2026-07-11</td><td data-val="0">0</td><td data-val="16">16</td><td data-val="100"><span class="badge badge-green">100</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/.github" target="_blank">.github</a></td><td>public</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="27">27</td><td data-val="2026-07-11T09:26:39Z">2026-07-11</td><td data-val="0">0</td><td data-val="1">1</td><td data-val="100"><span class="badge badge-green">100</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/archived-cpod-ui" target="_blank">archived-cpod-ui</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="14">14</td><td data-val="2026-07-20T11:27:06Z">2026-07-20</td><td data-val="0">0</td><td data-val="16">16</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cyberpod-readiness" target="_blank">cyberpod-readiness</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="12">12</td><td data-val="2026-07-11T09:18:29Z">2026-07-11</td><td data-val="0">0</td><td data-val="9">9</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/devops-practices" target="_blank">devops-practices</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="12">12</td><td data-val="2026-07-11T09:18:29Z">2026-07-11</td><td data-val="0">0</td><td data-val="4">4</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/open-copilot" target="_blank">open-copilot</a></td><td>public</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="12">12</td><td data-val="2026-07-11T09:18:30Z">2026-07-11</td><td data-val="0">0</td><td data-val="35">35</td><td data-val="100"><span class="badge badge-green">100</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cdat-app-tower-analysis" target="_blank">cdat-app-tower-analysis</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="12">12</td><td data-val="2026-07-11T09:18:40Z">2026-07-11</td><td data-val="0">0</td><td data-val="11">11</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cdat-ai" target="_blank">cdat-ai</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="17">17</td><td data-val="2026-07-11T09:18:40Z">2026-07-11</td><td data-val="0">0</td><td data-val="13">13</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/lighthouse-ui" target="_blank">lighthouse-ui</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="18">18</td><td data-val="2026-07-21T12:20:20Z">2026-07-21</td><td data-val="0">0</td><td data-val="7">7</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cdat-test" target="_blank">cdat-test</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-11T09:18:44Z">2026-07-11</td><td data-val="0">0</td><td data-val="10">10</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-amber"><td><a href="https://github.com/ZySec-AI/cpod-core" target="_blank">cpod-core</a></td><td>private</td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="19">19</td><td data-val="2026-07-21T07:30:00Z">2026-07-21</td><td data-val="0">0</td><td data-val="6">6</td><td data-val="70"><span class="badge badge-amber">70</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/data4ai" target="_blank">data4ai</a></td><td>public</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-11T09:18:50Z">2026-07-11</td><td data-val="0">0</td><td data-val="11">11</td><td data-val="100"><span class="badge badge-green">100</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/go-to-market-playbook" target="_blank">go-to-market-playbook</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:18:51Z">2026-07-11</td><td data-val="0">0</td><td data-val="10">10</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cpod-flows" target="_blank">cpod-flows</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="13">13</td><td data-val="2026-07-11T09:18:52Z">2026-07-11</td><td data-val="0">0</td><td data-val="8">8</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/ops" target="_blank">ops</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-11T09:18:57Z">2026-07-11</td><td data-val="0">0</td><td data-val="11">11</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-red"><td><a href="https://github.com/ZySec-AI/ai-risk-navigator-original" target="_blank">ai-risk-navigator-original</a></td><td>private</td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="0">0</td><td data-val="2025-09-02T18:43:19Z">2025-09-02⚠</td><td data-val="0">0</td><td data-val="0">0</td><td data-val="25"><span class="badge badge-red">25</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cpod-app-benchmarking" target="_blank">cpod-app-benchmarking</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:18:57Z">2026-07-11</td><td data-val="0">0</td><td data-val="10">10</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/flow-builder-app" target="_blank">flow-builder-app</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:19:02Z">2026-07-11</td><td data-val="0">0</td><td data-val="10">10</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cpod-apps-sdk" target="_blank">cpod-apps-sdk</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-11T09:19:04Z">2026-07-11</td><td data-val="0">0</td><td data-val="9">9</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cpod-apps" target="_blank">cpod-apps</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="22">22</td><td data-val="2026-07-23T10:46:53Z">2026-07-23</td><td data-val="0">0</td><td data-val="7">7</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cpod-arai" target="_blank">cpod-arai</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="27">27</td><td data-val="2026-07-22T06:43:57Z">2026-07-22</td><td data-val="0">0</td><td data-val="7">7</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/leadthe-ai" target="_blank">leadthe-ai</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="14">14</td><td data-val="2026-07-14T09:57:51Z">2026-07-14</td><td data-val="0">0</td><td data-val="7">7</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/evaops" target="_blank">evaops</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="13">13</td><td data-val="2026-07-11T09:19:15Z">2026-07-11</td><td data-val="0">0</td><td data-val="4">4</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/proposal-responder" target="_blank">proposal-responder</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:19:15Z">2026-07-11</td><td data-val="0">0</td><td data-val="11">11</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/c3" target="_blank">c3</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="13">13</td><td data-val="2026-07-23T06:00:55Z">2026-07-23</td><td data-val="0">0</td><td data-val="35">35</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/contributions-ai" target="_blank">contributions-ai</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:19:20Z">2026-07-11</td><td data-val="0">0</td><td data-val="12">12</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/test" target="_blank">test</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:19:23Z">2026-07-11</td><td data-val="0">0</td><td data-val="13">13</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/codebase-ai" target="_blank">codebase-ai</a></td><td>public</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="12">12</td><td data-val="2026-07-13T11:14:04Z">2026-07-13</td><td data-val="0">0</td><td data-val="13">13</td><td data-val="100"><span class="badge badge-green">100</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/agentsight" target="_blank">agentsight</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="16">16</td><td data-val="2026-07-24T17:29:15Z">2026-07-24</td><td data-val="0">0</td><td data-val="50">50</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/nextlog" target="_blank">nextlog</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="14">14</td><td data-val="2026-07-11T09:19:28Z">2026-07-11</td><td data-val="0">0</td><td data-val="9">9</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/customerops" target="_blank">customerops</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="16">16</td><td data-val="2026-07-21T14:29:12Z">2026-07-21</td><td data-val="0">0</td><td data-val="21">21</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/scalerisk" target="_blank">scalerisk</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="15">15</td><td data-val="2026-07-25T21:37:59Z">2026-07-25</td><td data-val="0">0</td><td data-val="13">13</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/security-opsadmin" target="_blank">security-opsadmin</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="12">12</td><td data-val="2026-07-14T15:13:44Z">2026-07-14</td><td data-val="0">0</td><td data-val="12">12</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/agent-eva" target="_blank">agent-eva</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="14">14</td><td data-val="2026-07-11T09:19:37Z">2026-07-11</td><td data-val="0">0</td><td data-val="12">12</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/core-sdk" target="_blank">core-sdk</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="23">23</td><td data-val="2026-07-22T07:28:45Z">2026-07-22</td><td data-val="0">0</td><td data-val="36">36</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/coreiq" target="_blank">coreiq</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="27">27</td><td data-val="2026-07-22T06:38:53Z">2026-07-22</td><td data-val="0">0</td><td data-val="23">23</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cpod-ui" target="_blank">cpod-ui</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="27">27</td><td data-val="2026-07-24T07:26:22Z">2026-07-24</td><td data-val="0">0</td><td data-val="178">178</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/datagrep" target="_blank">datagrep</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="15">15</td><td data-val="2026-07-22T07:47:07Z">2026-07-22</td><td data-val="0">0</td><td data-val="31">31</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cpod-backend" target="_blank">cpod-backend</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="21">21</td><td data-val="2026-07-24T13:36:47Z">2026-07-24</td><td data-val="0">0</td><td data-val="120">120</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/jd-pulse" target="_blank">jd-pulse</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:19:51Z">2026-07-11</td><td data-val="0">0</td><td data-val="10">10</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/presenter" target="_blank">presenter</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:19:55Z">2026-07-11</td><td data-val="0">0</td><td data-val="12">12</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/datacord" target="_blank">datacord</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="12">12</td><td data-val="2026-07-11T09:20:00Z">2026-07-11</td><td data-val="0">0</td><td data-val="10">10</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/hypermind" target="_blank">hypermind</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="13">13</td><td data-val="2026-07-26T18:04:08Z">2026-07-26</td><td data-val="0">0</td><td data-val="9">9</td><td data-val="100"><span class="badge badge-green">100</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/eva-outlook-addin" target="_blank">eva-outlook-addin</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-11T09:20:05Z">2026-07-11</td><td data-val="0">0</td><td data-val="7">7</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/code-reviewer" target="_blank">code-reviewer</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-11T09:20:04Z">2026-07-11</td><td data-val="0">0</td><td data-val="28">28</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/deployments" target="_blank">deployments</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="25">25</td><td data-val="2026-07-11T09:20:07Z">2026-07-11</td><td data-val="0">0</td><td data-val="24">24</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/crm-core-app" target="_blank">crm-core-app</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-24T13:42:08Z">2026-07-24</td><td data-val="0">0</td><td data-val="6">6</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/cpod-sdk" target="_blank">cpod-sdk</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="35">35</td><td data-val="2026-07-24T08:15:41Z">2026-07-24</td><td data-val="0">0</td><td data-val="12">12</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/relata" target="_blank">relata</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-18T06:06:35Z">2026-07-18</td><td data-val="0">0</td><td data-val="8">8</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-amber"><td><a href="https://github.com/ZySec-AI/outlook-tms" target="_blank">outlook-tms</a></td><td>private</td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:20:19Z">2026-07-11</td><td data-val="0">0</td><td data-val="0">0</td><td data-val="70"><span class="badge badge-amber">70</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/app-store" target="_blank">app-store</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="20">20</td><td data-val="2026-07-24T12:55:20Z">2026-07-24</td><td data-val="0">0</td><td data-val="208">208</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/eva-voice" target="_blank">eva-voice</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="11">11</td><td data-val="2026-07-11T09:20:26Z">2026-07-11</td><td data-val="0">0</td><td data-val="6">6</td><td data-val="90"><span class="badge badge-green">90</span></td></tr><tr class="row-amber"><td><a href="https://github.com/ZySec-AI/Open-Knowledge-Specs" target="_blank">Open-Knowledge-Specs</a></td><td>public</td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="10">10</td><td data-val="2026-07-11T09:20:26Z">2026-07-11</td><td data-val="0">0</td><td data-val="0">0</td><td data-val="70"><span class="badge badge-amber">70</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/rta" target="_blank">rta</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="12">12</td><td data-val="2026-07-25T23:01:44Z">2026-07-25</td><td data-val="0">0</td><td data-val="1">1</td><td data-val="75"><span class="badge badge-amber">75</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/it-ops" target="_blank">it-ops</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="9">9</td><td data-val="2026-07-25T17:10:12Z">2026-07-25</td><td data-val="0">0</td><td data-val="0">0</td><td data-val="75"><span class="badge badge-amber">75</span></td></tr><tr class="row-green"><td><a href="https://github.com/ZySec-AI/intops" target="_blank">intops</a></td><td>private</td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="12">12</td><td data-val="2026-07-25T12:00:01Z">2026-07-25</td><td data-val="0">0</td><td data-val="8">8</td><td data-val="75"><span class="badge badge-amber">75</span></td></tr><tr class="row-amber"><td><a href="https://github.com/ZySec-AI/crm-360" target="_blank">crm-360</a></td><td>private</td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="2">2</td><td data-val="2026-07-26T04:57:42Z">2026-07-26</td><td data-val="0">0</td><td data-val="0">0</td><td data-val="55"><span class="badge badge-amber">55</span></td></tr><tr class="row-amber"><td><a href="https://github.com/ZySec-AI/securedllm" target="_blank">securedllm</a></td><td>private</td><td data-val="0"><span class="bool-no">✗</span></td><td data-val="1"><span class="bool-yes">✓</span></td><td data-val="2">2</td><td data-val="2026-07-25T21:24:33Z">2026-07-25</td><td data-val="0">0</td><td data-val="11">11</td><td data-val="70"><span class="badge badge-amber">70</span></td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Members (26)</h2>
+    
+    <div class="table-wrap">
+      <table id="member-table">
+        <thead>
+          <tr><th>Login</th><th>Role</th><th>30d Commits</th><th>Contribution %</th></tr>
+        </thead>
+        <tbody><tr><td><a href="https://github.com/asimriyan-dev" target="_blank">asimriyan-dev</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/Bhavani-ampajwalam" target="_blank">Bhavani-ampajwalam</a></td><td>member</td><td data-val="24">24</td><td data-val="4.2">4.2%</td></tr><tr><td><a href="https://github.com/dan-ak1" target="_blank">dan-ak1</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/Guruzysec" target="_blank">Guruzysec</a></td><td>admin</td><td data-val="30">30</td><td data-val="5.2">5.2%</td></tr><tr><td><a href="https://github.com/heblinzysec" target="_blank">heblinzysec</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/Ishaan-ZysecAI" target="_blank">Ishaan-ZysecAI</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/Jhanani-Nallasamy" target="_blank">Jhanani-Nallasamy</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/lodum-sudo" target="_blank">lodum-sudo</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/manaswinir01" target="_blank">manaswinir01</a></td><td>admin</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/narasimha-zysec" target="_blank">narasimha-zysec</a></td><td>member</td><td data-val="21">21</td><td data-val="3.6">3.6%</td></tr><tr><td><a href="https://github.com/nibin-gigahex" target="_blank">nibin-gigahex</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/pavanj8" target="_blank">pavanj8</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/prono-star" target="_blank">prono-star</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/Rahul7676-zysec" target="_blank">Rahul7676-zysec</a></td><td>member</td><td data-val="23">23</td><td data-val="4.0">4.0%</td></tr><tr><td><a href="https://github.com/rahulsharmavishwakarma" target="_blank">rahulsharmavishwakarma</a></td><td>member</td><td data-val="32">32</td><td data-val="5.5">5.5%</td></tr><tr><td><a href="https://github.com/rishithaareddyv" target="_blank">rishithaareddyv</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/Satishzysec" target="_blank">Satishzysec</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/shubhrai2811" target="_blank">shubhrai2811</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/SoniaSharmaSemwal" target="_blank">SoniaSharmaSemwal</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/Sravya292003" target="_blank">Sravya292003</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/sumasrimallavolu" target="_blank">sumasrimallavolu</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/suryazysecai" target="_blank">suryazysecai</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/swapnil-pawar-zysec" target="_blank">swapnil-pawar-zysec</a></td><td>admin</td><td data-val="27">27</td><td data-val="4.7">4.7%</td></tr><tr><td><a href="https://github.com/tej-gangineni" target="_blank">tej-gangineni</a></td><td>member</td><td data-val="26">26</td><td data-val="4.5">4.5%</td></tr><tr><td><a href="https://github.com/vamsivarma27" target="_blank">vamsivarma27</a></td><td>member</td><td data-val="20">20</td><td data-val="3.5">3.5%</td></tr><tr><td><a href="https://github.com/venkycs" target="_blank">venkycs</a></td><td>admin</td><td data-val="34">34</td><td data-val="5.9">5.9%</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Findings &amp; Recommendations (3)</h2>
+    <ul class="findings-list">
+<li>
+  <span class="sev sev-Critical">Critical</span>
+  <div class="finding-body">
+    <p>2FA is NOT enforced org-wide — any member account without 2FA is a credential theft risk.</p>
+    <small>Rec: Enable 2FA requirement under Org Settings → Authentication security.</small>
+  </div>
+</li>
+<li>
+  <span class="sev sev-Medium">Medium</span>
+  <div class="finding-body">
+    <p>1 repos have not been pushed to in 90+ days.</p>
+    <small>Rec: Archive stale repos to reduce maintenance surface and confusion.</small>
+  </div>
+</li>
+<li>
+  <span class="sev sev-Medium">Medium</span>
+  <div class="finding-body">
+    <p>30-day CI pass rate is 50% — build stability is low.</p>
+    <small>Rec: Investigate flaky tests and failing workflows; add retry logic where appropriate.</small>
+  </div>
+</li></ul>
+  </section>
+</main>
+<footer>
+  Generated 2026-07-26 18:20 UTC &nbsp;·&nbsp; Run weekly via GitHub Actions &nbsp;·&nbsp; Org 360° Audit
+</footer>
+<script>
+function sortTable(tableId, col) {
+  const tbl = document.getElementById(tableId);
+  const tbody = tbl.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const th = tbl.querySelectorAll('th')[col];
+  const asc = th.dataset.sort !== 'asc';
+  tbl.querySelectorAll('th').forEach(h => delete h.dataset.sort);
+  th.dataset.sort = asc ? 'asc' : 'desc';
+  rows.sort((a, b) => {
+    const va = a.cells[col]?.dataset.val ?? a.cells[col]?.textContent ?? '';
+    const vb = b.cells[col]?.dataset.val ?? b.cells[col]?.textContent ?? '';
+    const na = parseFloat(va), nb = parseFloat(vb);
+    if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+    return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('table[id]').forEach(tbl => {
+    tbl.querySelectorAll('th').forEach((th, i) => {
+      th.addEventListener('click', () => sortTable(tbl.id, i));
+    });
+  });
+});
+</script>
+</body>
+</html>
