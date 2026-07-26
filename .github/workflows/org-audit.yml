@@ -1,0 +1,47 @@
+name: Org 360° Audit
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+  actions: read
+  security-events: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run org audit
+        env:
+          GH_TOKEN: ${{ secrets.ORG_AUDIT_TOKEN }}
+          ORG: ZySec-AI
+        run: python3 scripts/org_audit.py
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: org-audit-report
+          path: org-audit-report.html
+          retention-days: 90
+
+      - name: Commit report to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp org-audit-report.html .github/org-audit-report.html
+          git add .github/org-audit-report.html
+          git diff --cached --quiet || git commit -m "chore: update org audit report [skip ci]"
+          git push origin HEAD:main
