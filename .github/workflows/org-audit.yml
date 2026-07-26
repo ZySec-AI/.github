@@ -26,7 +26,7 @@ jobs:
 
       - name: Run org audit
         env:
-          GH_TOKEN: ${{ secrets.ORG_AUDIT_TOKEN }}
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           ORG: ZySec-AI
         run: python3 scripts/org_audit.py
 
@@ -44,4 +44,4 @@ jobs:
           cp org-audit-report.html .github/org-audit-report.html
           git add .github/org-audit-report.html
           git diff --cached --quiet || git commit -m "chore: update org audit report [skip ci]"
-          git push origin HEAD:main
+          git push origin HEAD:develop
