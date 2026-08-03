@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   bootstrap:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     steps:
       - name: Verify token
         env:

@@ -37,7 +37,7 @@ jobs:
   detect:
     name: Detect language stacks
     if: inputs.auto_detect
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     outputs:
       python: ${{ steps.detect.outputs.python }}
       node: ${{ steps.detect.outputs.node }}
@@ -71,7 +71,7 @@ jobs:
         (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.python == '1') ||
         (!inputs.auto_detect && inputs.python)
       )
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +128,7 @@ jobs:
         (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.node == '1') ||
         (!inputs.auto_detect && inputs.node)
       )
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 30
     env:
       # Placeholders for Next.js + Prisma builds (generate/build only — no live DB)
@@ -270,7 +270,7 @@ jobs:
         (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.rust == '1') ||
         (!inputs.auto_detect && inputs.rust)
       )
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -298,7 +298,7 @@ jobs:
 
   quality-gate:
     name: Quality Gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     needs: [detect, python-quality, node-quality, rust-quality]
     if: always()
     steps:

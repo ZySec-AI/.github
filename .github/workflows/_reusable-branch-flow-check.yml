@@ -10,7 +10,7 @@ permissions:
 jobs:
   branch-checks:
     name: Branch name + merge flow
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     steps:
       - name: Validate branch name (Conventional Commits)
         run: |

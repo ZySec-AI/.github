@@ -26,7 +26,7 @@ on:
 jobs:
   protect:
     name: Set branch protection rules
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     steps:
       - name: Apply protection to develop and release
         env:

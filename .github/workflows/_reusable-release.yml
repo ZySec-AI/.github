@@ -27,7 +27,7 @@ on:
 jobs:
   guard:
     name: Guard — develop must be ancestor of release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
@@ -52,7 +52,7 @@ jobs:
 
   qa-gate:
     name: QA Sign-off Gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     needs: guard
     if: github.event_name == 'pull_request'
     steps:
@@ -86,7 +86,7 @@ jobs:
 
   changelog:
     name: Generate Changelog
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     needs: guard
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -175,7 +175,7 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     needs: [guard, changelog]
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/release'
     permissions:
@@ -213,7 +213,7 @@ jobs:
 
   notify:
     name: Notify Teams
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     needs: [github-release, changelog]
     # FIX: was `if: inputs.notify && always()` — fired even when guard failed,
     # sending a confusing "release failed" notification when no release was attempted.

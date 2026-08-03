@@ -45,7 +45,7 @@ jobs:
   # ---------------------------------------------------------------------------
   stale_items:
     name: Stale issues + PRs
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     steps:
       - name: Calculate total days
         id: calc
@@ -93,7 +93,7 @@ jobs:
   # ---------------------------------------------------------------------------
   stale_branches:
     name: Delete stale branches
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     permissions:
       contents: write
       pull-requests: read

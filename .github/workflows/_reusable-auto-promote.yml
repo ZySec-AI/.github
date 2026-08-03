@@ -22,7 +22,7 @@ jobs:
   promote-to-stage:
     name: Promote develop → stage
     if: github.event.pull_request.merged == true && github.base_ref == 'develop'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     steps:
       - name: Open PR develop → stage
         env:
@@ -47,7 +47,7 @@ jobs:
   promote-to-release:
     name: Promote stage → release
     if: github.event.pull_request.merged == true && github.base_ref == 'stage'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     steps:
       - name: Open PR stage → release
         env:

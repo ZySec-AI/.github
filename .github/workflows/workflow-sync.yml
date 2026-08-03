@@ -32,7 +32,7 @@ permissions:
 jobs:
   list-repos:
     name: Discover repos
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     outputs:
       repos: ${{ steps.repos.outputs.repos }}
     steps:
@@ -64,7 +64,7 @@ jobs:
   sync:
     name: Sync ${{ matrix.repo }}
     needs: list-repos
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 5
     strategy:
       fail-fast: false
