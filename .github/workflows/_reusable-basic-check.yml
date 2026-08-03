@@ -16,7 +16,7 @@ concurrency:
 jobs:
   lint:
     name: Basic Check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4

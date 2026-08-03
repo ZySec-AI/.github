@@ -1,0 +1,4 @@
+# Custom labels used by the enterprise self-hosted runner.
+self-hosted-runner:
+  labels:
+    - zysec-ai-ci
