@@ -75,10 +75,19 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Claude Code + codebase-ai + gh
+      - name: Ensure npm is available
         if: steps.provider.outputs.skip != 'true'
         run: |
-          sudo npm install -g @anthropic-ai/claude-code@2.1.119 codebase-ai@0.7.0
+          node --version
+          npm --version
+
+      # Do not use sudo with npm: setup-node installs Node for the runner user,
+      # and sudo drops that PATH (especially on self-hosted runners).
+      - name: Install Claude Code + codebase-ai
+        if: steps.provider.outputs.skip != 'true'
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.119 codebase-ai@0.7.0
+          which claude
           claude --version
 
       - name: Determine context
