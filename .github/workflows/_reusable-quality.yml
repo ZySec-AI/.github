@@ -87,7 +87,10 @@ jobs:
           HAS_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' }}
         if: env.HAS_TOKEN == 'true'
         run: |
-          git config --global url."https://${{ secrets.ORG_ADMIN_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          # `--replace-all` collapses any existing multi-value list (left behind by
+          # the Node flow's `--add` invocations across prior jobs on this
+          # self-hosted runner) to a single value, so this step stays idempotent.
+          git config --global --replace-all url."https://${{ secrets.ORG_ADMIN_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
         run: uv sync --frozen
