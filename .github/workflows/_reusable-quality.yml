@@ -85,9 +85,21 @@ jobs:
       - name: Configure git for private deps
         env:
           HAS_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' }}
+          ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         if: env.HAS_TOKEN == 'true'
         run: |
-          git config --global url."https://${{ secrets.ORG_ADMIN_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          # Self-hosted runners may already have multiple insteadOf values from
+          # prior jobs; plain `git config` fails with exit 5. Clear then set once.
+          set -euo pipefail
+          git config --global --get-regexp '^url\..*\.insteadof$' 2>/dev/null \
+            | awk '{print $1}' \
+            | sort -u \
+            | while read -r key; do
+                git config --global --unset-all "$key" || true
+              done
+          git config --global --add \
+            url."https://${ORG_ADMIN_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
 
       - name: Install dependencies
         run: uv sync --frozen
