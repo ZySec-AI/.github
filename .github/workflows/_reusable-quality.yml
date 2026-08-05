@@ -90,14 +90,17 @@ jobs:
         run: |
           # Self-hosted runners may already have multiple insteadOf values from
           # prior jobs; plain `git config` fails with exit 5. Clear then set once.
-          set -euo pipefail
-          git config --global --get-regexp '^url\..*\.insteadof$' 2>/dev/null \
-            | awk '{print $1}' \
-            | sort -u \
-            | while read -r key; do
-                git config --global --unset-all "$key" || true
-              done
-          git config --global --add \
+          # Note: get-regexp exits 1 when empty — must not trip set -e / pipefail.
+          set -uo pipefail
+          keys=$(git config --global --get-regexp '^url\..*\.insteadof$' 2>/dev/null | awk '{print $1}' | sort -u || true)
+          if [ -n "${keys}" ]; then
+            while IFS= read -r key; do
+              git config --global --unset-all "$key" || true
+            done <<EOF
+${keys}
+EOF
+          fi
+          git config --global --replace-all \
             url."https://${ORG_ADMIN_TOKEN}@github.com/".insteadOf \
             "https://github.com/"
 
