@@ -1,7 +1,7 @@
 # =============================================================================
 # WORKFLOW: Reusable — Release
-# PURPOSE:  Ancestry guard → qa-approved gate → changelog → GitHub release
-#           → Teams notification
+# PURPOSE:  Ancestry guard (develop OR stage → release) → qa-approved gate
+#           → changelog → GitHub release → Teams notification
 # TRIGGERS: workflow_call
 # INPUTS:   environment (string), notify (bool)
 # SECRETS:  ORG_ADMIN_TOKEN (required), TEAMS_WEBHOOK (optional)
@@ -26,7 +26,7 @@ on:
 
 jobs:
   guard:
-    name: Guard — develop must be ancestor of release
+    name: Guard — develop or stage must be ancestor of release
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -35,18 +35,32 @@ jobs:
       - name: Verify ancestry
         run: |
           set -euo pipefail
+          # Supports both promote flows:
+          #   develop → release
+          #   develop → stage → release
+          # Pass if develop OR stage is an ancestor of the release commit.
           git fetch --no-tags origin develop:refs/remotes/origin/develop 2>/dev/null || true
+          git fetch --no-tags origin stage:refs/remotes/origin/stage 2>/dev/null || true
           REF="${{ github.sha }}"
 
-          # FIX: guard was inverted. Old code checked `is-ancestor $REF develop`
-          # which asks "is the release commit in develop's history?" — wrong.
-          # Correct check: "is develop in the release commit's history?"
-          # i.e. develop must be an ancestor of the release commit.
-          if git merge-base --is-ancestor origin/develop "$REF"; then
-            echo "✓ develop is an ancestor of the release commit — guard passed"
+          ok=false
+          if git rev-parse --verify origin/develop >/dev/null 2>&1 \
+            && git merge-base --is-ancestor origin/develop "$REF"; then
+            echo "✓ develop is an ancestor of the release commit"
+            ok=true
+          fi
+          if git rev-parse --verify origin/stage >/dev/null 2>&1 \
+            && git merge-base --is-ancestor origin/stage "$REF"; then
+            echo "✓ stage is an ancestor of the release commit"
+            ok=true
+          fi
+
+          if [ "$ok" = true ]; then
+            echo "✓ ancestry guard passed (develop and/or stage)"
           else
-            echo "::error title=Ancestry Guard Failed::This release commit does not include all develop changes."
-            echo "Fix: git checkout <release-branch> && git merge develop && git push"
+            echo "::error title=Ancestry Guard Failed::Release must include develop or stage history."
+            echo "Supported flows: merge develop→release, or stage→release (after develop→stage)."
+            echo "Fix: open a PR from develop or stage into release (prefer a merge commit, not squash)."
             exit 1
           fi
 
