@@ -69,28 +69,25 @@ jobs:
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     needs: guard
     if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: read
     steps:
       - name: Check qa-approved label
         env:
-          ORG_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
-          FALLBACK_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Try ORG_ADMIN_TOKEN first, fall back to GITHUB_TOKEN
-          TOKEN="${ORG_TOKEN:-$FALLBACK_TOKEN}"
-          RESPONSE=$(GH_TOKEN="$TOKEN" gh api /repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels 2>/dev/null || echo "[]")
-          if echo "$RESPONSE" | grep -q '"message"'; then
-            if [ -n "$ORG_TOKEN" ]; then
-              echo "⚠️  ORG_ADMIN_TOKEN failed, retrying with GITHUB_TOKEN..."
-              RESPONSE=$(GH_TOKEN="$FALLBACK_TOKEN" gh api /repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels 2>/dev/null || echo "[]")
-            fi
-          fi
-          if echo "$RESPONSE" | grep -q '"message"'; then
-            echo "::error::Could not fetch PR labels (API error). Check ORG_ADMIN_TOKEN or GITHUB_TOKEN permissions."
+          # Read labels with the job's GITHUB_TOKEN (has pull-requests: read).
+          # The previous ORG_ADMIN_TOKEN-first logic masked a set-but-invalid
+          # token's auth error as "[]" (no "message"), so the fallback never
+          # fired and the gate saw zero labels even when qa-approved was set.
+          LABELS=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+          if [ -z "$LABELS" ] && ! gh pr view "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --json number >/dev/null 2>&1; then
+            echo "::error::Could not read PR labels (GITHUB_TOKEN lacks pull-requests: read?)."
             exit 1
           fi
-          LABELS=$(echo "$RESPONSE" | jq -r '.[].name' 2>/dev/null || echo "")
           echo "Labels: $LABELS"
-          if echo "$LABELS" | grep -q "qa-approved"; then
+          if echo "$LABELS" | grep -qx "qa-approved"; then
             echo "✓ qa-approved label present"
           else
             echo "::error title=QA Gate Failed::This PR requires the 'qa-approved' label before merging to release."
