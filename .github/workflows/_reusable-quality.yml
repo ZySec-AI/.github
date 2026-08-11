@@ -375,11 +375,30 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: test + coverage (>= ${{ inputs.coverage_threshold }}%)
+        env:
+          COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold }}
         run: |
           set -euo pipefail
+          # Print a human summary (like pytest/vitest), then fail closed under threshold.
+          # --lcov alone writes a file and can exit 1 with almost no % shown in the log.
+          set +e
           cargo llvm-cov --all-features --workspace \
-            --fail-under-lines ${{ inputs.coverage_threshold }} \
-            --lcov --output-path lcov.info
+            --summary-only \
+            --fail-under-lines "${COVERAGE_THRESHOLD}"
+          status=$?
+          set -e
+
+          # Keep an lcov artifact even when the threshold fails (best-effort).
+          cargo llvm-cov report --lcov --output-path lcov.info 2>/dev/null \
+            || cargo llvm-cov --no-run --lcov --output-path lcov.info 2>/dev/null \
+            || true
+
+          if [ "$status" -ne 0 ]; then
+            echo "::error title=Rust coverage below threshold::Line coverage is below ${COVERAGE_THRESHOLD}% (tests may still have passed)."
+            echo "Open the summary above for the actual %. Raise coverage or temporarily set coverage_threshold in the repo quality.yml."
+            exit 1
+          fi
+          echo "✓ Rust line coverage meets ${COVERAGE_THRESHOLD}% threshold"
 
       - uses: actions/upload-artifact@v4
         if: always()
