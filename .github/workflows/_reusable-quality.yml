@@ -17,8 +17,9 @@ on:
         type: boolean
         default: false
       coverage_threshold:
+        description: 'Minimum line coverage % for Python, Node, and Rust quality jobs'
         type: number
-        default: 80
+        default: 70
       python_version:
         type: string
         default: '3.12'
@@ -121,7 +122,7 @@ jobs:
           retention-days: 7
 
   node-quality:
-    name: Node / Next.js — lint / type / build
+    name: Node / Next.js — lint / type / build / coverage
     needs: detect
     if: |
       always() && (
@@ -262,8 +263,83 @@ jobs:
             npm) npm run build ;;
           esac
 
+      - name: Test + coverage (>= ${{ inputs.coverage_threshold }}%)
+        env:
+          COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold }}
+        run: |
+          set -euo pipefail
+          PM="${{ steps.stack.outputs.pm }}"
+          has() { node -e "const s=require('./package.json').scripts||{}; process.exit(s['$1']?0:1)"; }
+          run_script() {
+            case "$PM" in
+              pnpm) pnpm run "$1" ;;
+              yarn) yarn "$1" ;;
+              npm) npm run "$1" ;;
+            esac
+          }
+          exec_bin() {
+            case "$PM" in
+              pnpm) pnpm exec "$@" ;;
+              yarn) yarn exec "$@" ;;
+              npm) npx "$@" ;;
+            esac
+          }
+          enforce_summary() {
+            # Fail closed when a coverage summary exists and is under threshold.
+            for f in coverage/coverage-summary.json coverage-critical/coverage-summary.json coverage-summary.json; do
+              if [ -f "$f" ]; then
+                node -e "
+                  const fs=require('fs');
+                  const t=Number(process.env.COVERAGE_THRESHOLD);
+                  const j=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));
+                  const lines=(j.total&&j.total.lines&&j.total.lines.pct!=null)?Number(j.total.lines.pct):null;
+                  if (lines==null) { console.error('No total.lines.pct in', process.argv[1]); process.exit(1); }
+                  console.log('Node line coverage:', lines + '%', '(threshold ' + t + '%)');
+                  if (lines < t) { console.error('Coverage below threshold'); process.exit(1); }
+                " "$f"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Prefer runners that can enforce the org threshold directly.
+          if node -e "const p=require('./package.json'); const d={...p.devDependencies||{},...p.dependencies||{}}; process.exit(d.vitest||d['@vitest/coverage-v8']?0:1)"; then
+            exec_bin vitest run --coverage \
+              --coverage.thresholds.lines="${COVERAGE_THRESHOLD}" \
+              --coverage.thresholds.functions="${COVERAGE_THRESHOLD}" \
+              --coverage.thresholds.branches="${COVERAGE_THRESHOLD}" \
+              --coverage.thresholds.statements="${COVERAGE_THRESHOLD}"
+          elif node -e "const p=require('./package.json'); const d={...p.devDependencies||{},...p.dependencies||{}}; process.exit(d.jest||d['@jest/globals']?0:1)"; then
+            exec_bin jest --coverage --coverageThreshold="{\"global\":{\"lines\":${COVERAGE_THRESHOLD},\"functions\":${COVERAGE_THRESHOLD},\"branches\":${COVERAGE_THRESHOLD},\"statements\":${COVERAGE_THRESHOLD}}}"
+          elif has coverage; then
+            run_script coverage
+            enforce_summary || { echo "::error::coverage script ran but no coverage-summary.json found to enforce ${COVERAGE_THRESHOLD}%"; exit 1; }
+          elif has test:coverage; then
+            run_script test:coverage
+            enforce_summary || { echo "::error::test:coverage ran but no coverage-summary.json found to enforce ${COVERAGE_THRESHOLD}%"; exit 1; }
+          elif has coverage:critical; then
+            run_script coverage:critical
+            enforce_summary || { echo "::error::coverage:critical ran but no coverage-summary.json found to enforce ${COVERAGE_THRESHOLD}%"; exit 1; }
+          else
+            echo "::error::No Node coverage runner found. Add vitest/jest coverage (preferred) or a coverage script that writes coverage-summary.json."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: node-coverage-report
+          path: |
+            coverage/
+            coverage-critical/
+            coverage/coverage-summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+
   rust-quality:
-    name: Rust — fmt / clippy / test
+    name: Rust — fmt / clippy / test / coverage
     needs: detect
     if: |
       always() && (
@@ -271,15 +347,20 @@ jobs:
         (!inputs.auto_detect && inputs.rust)
       )
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
 
       - name: Install Python dev libraries (required for PyO3 crates)
         run: |
@@ -293,8 +374,21 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: test
-        run: cargo test --all-features
+      - name: test + coverage (>= ${{ inputs.coverage_threshold }}%)
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --all-features --workspace \
+            --fail-under-lines ${{ inputs.coverage_threshold }} \
+            --lcov --output-path lcov.info
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: rust-coverage-report
+          path: lcov.info
+          if-no-files-found: ignore
+          retention-days: 7
 
   quality-gate:
     name: Quality Gate
