@@ -78,6 +78,14 @@ jobs:
       - name: Install Claude Code + codebase-ai + gh
         if: steps.provider.outputs.skip != 'true'
         run: |
+          # Self-heal the shared runner's global npm dir before installing. A previously
+          # interrupted `npm install -g` can leave a half-written module behind, after which
+          # every later install aborts with `ENOTEMPTY: ... rename '.../codebase-ai'` (exit 217)
+          # before the review even runs. Remove any stale copies first so the install is clean.
+          sudo rm -rf /usr/lib/node_modules/codebase-ai \
+                      /usr/lib/node_modules/.codebase-ai-* \
+                      /usr/lib/node_modules/@anthropic-ai/claude-code \
+                      /usr/lib/node_modules/@anthropic-ai/.claude-code-* || true
           sudo npm install -g @anthropic-ai/claude-code@2.1.119 codebase-ai@0.7.0
           claude --version
 
