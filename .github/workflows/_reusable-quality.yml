@@ -374,9 +374,27 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # `cargo llvm-cov` compiles a second, fully instrumented target tree at
+      # target/llvm-cov-target/ — the clippy build in target/{debug,release} is
+      # never reused by it. On the shared self-hosted runners, keeping both
+      # multi-GB trees on disk at once is what tips large workspaces over into
+      # "No space left on device (os error 28)" mid-coverage. Drop the clippy
+      # tree here (best-effort; the coverage tree lives in a sibling dir) so the
+      # instrumented build has room. df output is kept for future diagnosis.
+      - name: Reclaim disk before coverage
+        run: |
+          echo "Disk before reclaim:"; df -h . || true
+          rm -rf target/debug target/release || true
+          echo "Disk after reclaim:"; df -h . || true
+
       - name: test + coverage (>= ${{ inputs.coverage_threshold }}%)
         env:
           COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold }}
+          # Debuginfo is the largest component of the instrumented target tree
+          # and llvm-cov's source-based line coverage does not depend on it
+          # (it uses the -C instrument-coverage mapping, not DWARF). Trim it to
+          # line tables to roughly halve target/llvm-cov-target/ on disk.
+          CARGO_PROFILE_DEV_DEBUG: line-tables-only
         run: |
           set -euo pipefail
           # Print a human summary (like pytest/vitest), then fail closed under threshold.
