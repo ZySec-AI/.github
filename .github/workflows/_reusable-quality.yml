@@ -88,7 +88,12 @@ jobs:
           HAS_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' }}
         if: env.HAS_TOKEN == 'true'
         run: |
-          git config --global url."https://${{ secrets.ORG_ADMIN_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          # Self-hosted runners retain global gitconfig across jobs. A plain
+          # `git config` fails with "cannot overwrite multiple values" once a
+          # prior job already set this insteadOf — use --replace-all.
+          git config --global --replace-all \
+            url."https://${{ secrets.ORG_ADMIN_TOKEN }}@github.com/".insteadOf \
+            "https://github.com/"
 
       - name: Install dependencies
         run: uv sync --frozen
