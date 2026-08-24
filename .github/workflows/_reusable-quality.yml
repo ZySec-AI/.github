@@ -351,11 +351,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Self-hosted runners accumulate cargo/llvm-cov artifacts across jobs.
+      # Clippy + llvm-cov each need a full target tree; without reclaiming
+      # space the coverage step dies with ENOSPC and is misreported as
+      # "coverage below threshold".
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          echo "== Before cleanup =="
+          df -h . /tmp 2>/dev/null || df -h
+          rm -rf target/llvm-cov-target target/llvm-cov target/tmp 2>/dev/null || true
+          rm -rf /tmp/rustc* /tmp/.tmp* 2>/dev/null || true
+          # Drop stale target trees from other checkouts on this runner (best-effort).
+          if [ -n "${RUNNER_WORKSPACE:-}" ] && [ -d "${RUNNER_WORKSPACE}" ]; then
+            find "${RUNNER_WORKSPACE}" -mindepth 2 -maxdepth 4 -type d \( -name 'llvm-cov-target' -o -name 'llvm-cov' \) \
+              ! -path "${GITHUB_WORKSPACE}/*" -prune -exec rm -rf {} + 2>/dev/null || true
+          fi
+          echo "== After cleanup =="
+          df -h . /tmp 2>/dev/null || df -h
+          avail_kb=$(df -Pk . | awk 'NR==2 {print $4}')
+          if [ "${avail_kb:-0}" -lt 4194304 ]; then
+            echo "::warning::Low disk (<4GiB available). Purging workspace target/ before build."
+            rm -rf target 2>/dev/null || true
+            df -h . || true
+          fi
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy, llvm-tools-preview
 
+      # Cache registry/git only — restoring a multi-GB target/ on constrained
+      # self-hosted disks regularly OOMs the llvm-cov compile.
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: false
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
@@ -373,6 +402,13 @@ jobs:
 
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # llvm-cov writes to target/llvm-cov-target; reclaim clippy's target/debug.
+      - name: Reclaim clippy artifacts before coverage
+        run: |
+          set -euo pipefail
+          rm -rf target/debug target/tmp target/release 2>/dev/null || true
+          df -h . || true
 
       - name: test + coverage (>= ${{ inputs.coverage_threshold }}%)
         env:
@@ -394,6 +430,11 @@ jobs:
             || true
 
           if [ "$status" -ne 0 ]; then
+            if [ ! -f lcov.info ]; then
+              echo "::error title=Rust coverage build failed::cargo llvm-cov failed before producing coverage (often disk full / ENOSPC on self-hosted runners). Check the compile log above."
+              df -h . /tmp 2>/dev/null || true
+              exit 1
+            fi
             echo "::error title=Rust coverage below threshold::Line coverage is below ${COVERAGE_THRESHOLD}% (tests may still have passed)."
             echo "Open the summary above for the actual %. Raise coverage or temporarily set coverage_threshold in the repo quality.yml."
             exit 1
