@@ -351,6 +351,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The zysec-ai-ci host runs several runners (github-self-runner-1..N). Each has
+      # its own work dir (/home/github-runner-N/_work) but they all report the same
+      # HOME=/home/github-runner, so every Rust job inherits one shared
+      # CARGO_HOME=/home/github-runner/.cargo. dtolnay/rust-toolchain re-runs
+      # rustup-init into it on every job and taiki-e/install-action writes
+      # cargo-llvm-cov into the same bin/, so concurrent Rust jobs race on a single
+      # shim directory and a job can observe `cargo: command not found` (exit 127).
+      # Key CARGO_HOME off each runner's private work root: the race goes away and
+      # the registry/bin cache still stays warm per runner. See ZySec-AI/.github#50.
+      - name: Isolate CARGO_HOME per runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${RUNNER_WORKSPACE:-$HOME}"   # /home/github-runner-N/_work/<repo>
+          base="${base%/*}"                   # /home/github-runner-N/_work
+          mkdir -p "$base/.cargo/bin"
+          echo "CARGO_HOME=$base/.cargo" >> "$GITHUB_ENV"
+          echo "$base/.cargo/bin" >> "$GITHUB_PATH"
+          echo "CARGO_HOME isolated to $base/.cargo"
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy, llvm-tools-preview
@@ -367,6 +387,19 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y python3-dev
           echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
+
+      # Fail fast with a clear message if the toolchain still isn't reachable, rather
+      # than letting the next step die as a bare `cargo: command not found` (exit 127).
+      - name: Verify Rust toolchain is usable
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            echo "::error::cargo not on PATH (CARGO_HOME=${CARGO_HOME:-unset})"
+            ls -la "${CARGO_HOME:-$HOME/.cargo}/bin" || true
+            exit 1
+          fi
+          cargo --version
+          rustc --version
 
       - name: fmt check
         run: cargo fmt --all -- --check
