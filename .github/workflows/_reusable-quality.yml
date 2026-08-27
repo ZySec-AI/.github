@@ -19,7 +19,7 @@ on:
       coverage_threshold:
         description: 'Minimum line coverage % for Python, Node, and Rust quality jobs'
         type: number
-        default: 70
+        default: 85
       python_version:
         type: string
         default: '3.12'
