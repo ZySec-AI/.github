@@ -39,6 +39,7 @@ jobs:
     name: Detect language stacks
     if: inputs.auto_detect
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 5
     outputs:
       python: ${{ steps.detect.outputs.python }}
       node: ${{ steps.detect.outputs.node }}
@@ -412,6 +413,7 @@ jobs:
   quality-gate:
     name: Quality Gate
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 5
     needs: [detect, python-quality, node-quality, rust-quality]
     if: always()
     steps:

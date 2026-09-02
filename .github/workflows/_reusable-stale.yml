@@ -34,6 +34,11 @@ on:
         type: number
         default: 7
 
+# Never run two sweep passes at once (a slow one plus a manual dispatch).
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions:
   pull-requests: write
   issues: write
@@ -46,6 +51,7 @@ jobs:
   stale_items:
     name: Stale issues + PRs
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 15
     steps:
       - name: Calculate total days
         id: calc
@@ -94,6 +100,7 @@ jobs:
   stale_branches:
     name: Delete stale branches
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: read

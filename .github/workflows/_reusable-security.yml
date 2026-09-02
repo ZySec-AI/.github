@@ -57,6 +57,7 @@ jobs:
     name: Detect language stacks
     if: inputs.auto_detect
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 5
     outputs:
       python: ${{ steps.detect.outputs.python }}
       node: ${{ steps.detect.outputs.node }}
@@ -89,6 +90,7 @@ jobs:
   secret-scan:
     name: Secret Scan (gitleaks)
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 10
     permissions:
       contents: read
     env:
@@ -130,6 +132,7 @@ jobs:
         (!inputs.auto_detect && (inputs.python || inputs.node))
       )
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 45
     permissions:
       actions: read
       contents: read
@@ -174,6 +177,7 @@ jobs:
   dep-review:
     name: Dependency Review
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 10
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -190,6 +194,7 @@ jobs:
   trivy-fs:
     name: Trivy - filesystem scan
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 15
     permissions:
       actions: read
       contents: read
@@ -228,6 +233,7 @@ jobs:
         (!inputs.auto_detect && inputs.docker)
       )
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 20
     permissions:
       actions: read
       contents: read
