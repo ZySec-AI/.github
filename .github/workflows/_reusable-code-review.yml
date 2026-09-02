@@ -21,8 +21,15 @@ on:
       ORG_ADMIN_TOKEN:
         required: false
 
+# github.ref alone is only unique per-PR for pull_request-triggered calls
+# (refs/pull/<n>/merge). For issues-triggered callers (issue-auto-fix,
+# issue-triage) every event reports the SAME default-branch ref, so a
+# ref-only group would let one issue's run cancel a completely different
+# issue's — wasted work, not saved work. Fall back through PR number, then
+# issue number, before ref so every trigger shape gets a group as specific
+# as the event actually is.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/release' }}
 
 jobs:
