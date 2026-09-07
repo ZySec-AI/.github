@@ -112,7 +112,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `🗓️ Non-standard milestone blocked: "${title}"`,
-              labels: ['type:chore'],
+              labels: ['agent:check'],
               body: [
                 `## Milestone \`${title}\` was automatically removed`,
                 '',
@@ -127,7 +127,7 @@ jobs:
                 '| `v0.5 — Scale & Polish` | Performance, load testing, UX polish, and pre-GA cleanup |',
                 '| `v1.0 — GA` | SOC 2, ISO 27001, pen-test sign-off, and enterprise certification |',
                 '',
-                'If you need to track work outside these milestones, use **labels** (`epic`, `priority:p0`) or the **GitHub Project** board instead.',
+                'To track work outside these milestones, set the Issue Type (Epic) and the Priority field, or use the Engineering Delivery project board.',
                 '',
                 '> Milestone standard: https://github.com/ZySec-AI/.github',
               ].join('\n'),

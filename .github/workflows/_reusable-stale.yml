@@ -87,8 +87,16 @@ jobs:
             of no activity. Re-open if still relevant.
 
           # Exemptions
-          exempt-pr-labels: 'bot-skip,hotfix,type:docs,pinned,security'
-          exempt-issue-labels: 'bot-skip,severity:critical,severity:high,pinned,epic'
+          # Every previous entry here except `security` was deleted with the old
+          # taxonomy (T-326/T-327), so these lists silently exempted nothing and
+          # the bot would have started closing work it was meant to leave alone.
+          #
+          # Severity is a native issue field now, not a label, and actions/stale
+          # cannot read native fields or Issue Types — so a critical bug or an
+          # epic can no longer be exempted by this mechanism. Exemption is by
+          # manifest label only.
+          exempt-pr-labels: 'security,regression,found-in:production'
+          exempt-issue-labels: 'security,regression,found-in:production'
 
           # Operational
           operations-per-run: 100
