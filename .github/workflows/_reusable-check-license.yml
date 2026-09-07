@@ -58,7 +58,7 @@ jobs:
             echo ""
             echo "ZySec AI software is proprietary and commercially distributed."
             echo "Use only: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0"
-            echo "If false positive, add the 'bot-skip' label to bypass."
+            echo "If false positive, add the 'agent:skip' label to bypass."
             exit 1
           fi
           echo "check-license: no incompatible license text detected"

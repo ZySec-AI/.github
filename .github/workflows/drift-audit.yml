@@ -111,7 +111,7 @@ jobs:
           BODY=$(cat /tmp/audit.md)
           # find existing open drift-audit issue from this calendar month
           existing=$(gh issue list --repo ZySec-AI/.github --state open \
-                     --label drift-audit --json number,title \
+                     --label agent:check --json number,title \
                      --jq ".[] | select(.title | startswith(\"Drift Audit — $(date -u +%Y-%m)\")) | .number" \
                      | head -1)
           if [ -n "$existing" ]; then

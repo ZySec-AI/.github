@@ -151,8 +151,8 @@ stale:
   issue_pr:
     stale_days: 7
     close_days: 7                     # total: 14d inactive → closed
-    exempt_pr_labels: [bot-skip, hotfix, type:docs, pinned, security]
-    exempt_issue_labels: [bot-skip, severity:critical, severity:high, pinned, epic]
+    exempt_pr_labels: [security, regression, found-in:production]
+    exempt_issue_labels: [security, regression, found-in:production]
   branches:
     max_age_days: 21
     exempt_prefixes: [backup-, backup/, release-]

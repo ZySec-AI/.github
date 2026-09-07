@@ -8,7 +8,7 @@
 #           -> New repository variable -> Name: CI_FAILURE_OWNER, Value: @github-login
 #           Or set an org variable for a global default (e.g. DevOps lead).
 #           If neither is set, the last committer on the failed branch is assigned.
-# LABEL:    Issues are tagged `ci-failure` for tracking/filtering.
+# LABEL:    Issues are tagged `area:ci` (org manifest) for tracking/filtering.
 # DEDUP:    If an open issue already exists for the same workflow + SHA, skip.
 # CONTACT:  platform-eng@zysec.ai
 # =============================================================================
