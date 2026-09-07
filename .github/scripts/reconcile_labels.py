@@ -57,13 +57,34 @@ def main():
     ap.add_argument("manifest")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--repo")
+    ap.add_argument("--min-labels", type=int, default=30,
+                    help="refuse to run if the manifest has fewer than this")
+    ap.add_argument("--max-deletes", type=int, default=150,
+                    help="refuse to delete more than this in one run")
     args = ap.parse_args()
 
     manifest = load_manifest(args.manifest)
+
+    # Deletion is automatic now, so a broken manifest is no longer a nuisance —
+    # it is an org-wide data loss event. A truncated or unparseable labels.yml
+    # would make every label in every repository look off-manifest, and the run
+    # would cheerfully delete all of them. Refuse to proceed instead.
+    if len(manifest) < args.min_labels:
+        sys.exit(
+            f"refusing to run: the manifest parsed to {len(manifest)} labels, "
+            f"below the floor of {args.min_labels}. Either labels.yml is broken "
+            f"or the floor needs lowering deliberately — both are decisions for "
+            f"a person, not a nightly job."
+        )
+    if any(not l.get("color") for l in manifest):
+        bad = [l["name"] for l in manifest if not l.get("color")][:5]
+        sys.exit(f"refusing to run: manifest entries missing a colour: {bad}")
+
     want = {l["name"]: l for l in manifest}
     targets = [args.repo] if args.repo else repos()
 
     missing, extra, wrong = defaultdict(list), defaultdict(list), defaultdict(list)
+    pending_deletes = []
 
     for repo in targets:
         have = {l["name"]: l for l in json.loads(
@@ -85,9 +106,29 @@ def main():
         for name in have:
             if name not in want:
                 extra[repo].append(name)
-                if args.apply:
-                    sh(["gh", "api", "-X", "DELETE",
-                        f"/repos/{ORG}/{repo}/labels/{name}"], check=False)
+                pending_deletes.append((repo, name))
+
+    # Blast radius: a legitimate day's drift is a handful of labels. Hundreds
+    # means something upstream went wrong — a bad merge, a bot loop, a manifest
+    # someone edited in a hurry. Stop and make a person look.
+    if args.apply and len(pending_deletes) > args.max_deletes:
+        print(f"\n## Refused to delete\n")
+        print(f"{len(pending_deletes)} labels are off-manifest, above the ceiling "
+              f"of {args.max_deletes}. That is too many for one night's drift, so "
+              f"nothing was deleted.\n")
+        print("Check whether `labels.yml` changed unexpectedly. If this really is "
+              "intended — a deliberate taxonomy change, say — re-run manually with "
+              "a higher `--max-deletes`.\n")
+        for repo, name in sorted(pending_deletes)[:40]:
+            print(f"- `{repo}` — {name}")
+        if len(pending_deletes) > 40:
+            print(f"- …and {len(pending_deletes) - 40} more")
+        return 2
+
+    if args.apply:
+        for repo, name in pending_deletes:
+            sh(["gh", "api", "-X", "DELETE",
+                f"/repos/{ORG}/{repo}/labels/{name}"], check=False)
 
     verb = "Applied" if args.apply else "Would apply"
     print(f"# Label reconcile — {len(targets)} repositories\n")
