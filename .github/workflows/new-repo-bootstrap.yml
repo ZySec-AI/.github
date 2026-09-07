@@ -53,7 +53,7 @@ jobs:
             ["code-review.yml"]="post-merge AI audit on develop"
             ["code-review-pr.yml"]="AI PR review on develop PRs"
             ["issue-triage.yml"]="AI issue triage on opened/reopened"
-            ["issue-auto-fix.yml"]="AI auto-fix on bot-fix-please label"
+            ["issue-auto-fix.yml"]="AI auto-fix on agent:ready-for-dev label"
             ["branch-flow-check.yml"]="branch naming + merge flow validation"
             ["pr-standards.yml"]="PR description + type label validation"
             ["merge-comment.yml"]="PR checklist comment on develop PRs"
