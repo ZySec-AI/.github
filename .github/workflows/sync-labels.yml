@@ -9,10 +9,17 @@
 #           a second, different label list to the one in /labels.yml. Neither was
 #           enforced and the two disagreed. labels.json has been deleted.
 #
-# SAFETY:   This can delete labels across every repository, and deleting a label
-#           strips it from every issue it was ever on, irreversibly. So it
-#           REPORTS by default and deletes only when a human runs it with
-#           apply: true. The schedule never deletes.
+# SAFETY:   This DELETES off-manifest labels automatically, including on the
+#           nightly schedule. Deleting a label strips it from every issue it was
+#           ever on, irreversibly — so two guards sit in front of it:
+#             - the run aborts if labels.yml parses to fewer than 30 labels,
+#               which is what a truncated or broken manifest looks like. Without
+#               it, an unparseable file would make every label in every repo
+#               look off-manifest and the job would delete all of them.
+#             - the run aborts if a single pass would delete more than 150
+#               labels. A day's genuine drift is a handful; hundreds means
+#               something upstream broke and a person should look.
+#           Both ceilings are overridable on a manual run.
 # CONTACT:  platform-eng@zysec.ai
 # =============================================================================
 name: sync canonical labels org-wide
@@ -21,9 +28,13 @@ on:
   workflow_dispatch:
     inputs:
       apply:
-        description: "Write changes (false = report only)"
+        description: "Write changes (default true — untick to preview only)"
         type: boolean
-        default: false
+        default: true
+      max_deletes:
+        description: "Abort if a run would delete more than this many labels"
+        type: string
+        default: "150"
       repo:
         description: "Limit to one repository (blank = all)"
         type: string
@@ -53,16 +64,28 @@ jobs:
       - name: Reconcile
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
-          # Only a deliberate manual run may delete. Schedule and push report.
-          APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply || false }}
+          # Deletion is automatic, including on the schedule. A manual run can
+          # still preview by unticking `apply`.
+          APPLY: ${{ github.event_name != 'workflow_dispatch' || inputs.apply }}
           ONLY: ${{ inputs.repo }}
+          MAX_DELETES: ${{ inputs.max_deletes || '150' }}
         run: |
           set -euo pipefail
-          args=(labels.yml)
+          args=(labels.yml --max-deletes "${MAX_DELETES}")
           [ "${APPLY}" = "true" ] && args+=(--apply)
           [ -n "${ONLY:-}" ] && args+=(--repo "$ONLY")
-          # Exit 1 means drift was found, which is a report, not a failure.
-          python3 .github/scripts/reconcile_labels.py "${args[@]}" | tee report.md || true
+
+          set +e
+          python3 .github/scripts/reconcile_labels.py "${args[@]}" | tee report.md
+          rc=${PIPESTATUS[0]}
+          set -e
+
+          # 0 clean, 1 drift found and handled — both fine. 2 means a guard
+          # tripped and nothing was written, which must fail loudly.
+          if [ "$rc" -ge 2 ]; then
+            echo "::error title=Label sync refused::A safety guard stopped this run. See the summary."
+            exit "$rc"
+          fi
 
       - name: Summarise
         if: always()
