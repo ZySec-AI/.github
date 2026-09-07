@@ -1,5 +1,28 @@
 # Ticket Taxonomy — ZySec AI
 
+> [!IMPORTANT]
+> **Parts of this document are out of date as of 2026-09-07.**
+>
+> The org moved from 141 ad-hoc labels to a 42-label enforced taxonomy
+> ([`labels.yml`](labels.yml)). The `type:*`, `priority:*`, `status:*`,
+> `severity:*` and `dimension:*` labels this document describes **no longer
+> exist** — they were deleted from every repository.
+>
+> They were not replaced by other labels. They became native GitHub fields:
+>
+> | This document says | Now use |
+> |---|---|
+> | `type:bug`, `type:feature`, `type:task`, `type:epic` | **Issue Type** — Bug / Feature / Task / Epic |
+> | `type:chore`, `type:docs`, `type:infra`, `type:test`, `type:spec`, `type:tech-debt` | **Issue Type: Task** |
+> | `priority:p0`–`p3` | **Issue Priority** field (P0–P3) |
+> | `severity:*` | **Issue Severity** field |
+> | `status:*` | **Status** on the Engineering Delivery board |
+> | `dimension:*` | `area:*` on the manifest |
+>
+> The workflow guidance below — templates, milestones, branch and ticket
+> conventions — still holds. Only the label names are wrong. This document needs
+> a proper pass; treat `labels.yml` as authoritative where the two disagree.
+
 > **Self-contained rule:** Every issue must be independently actionable. A developer or coding agent should be able to pick up any issue without reading the parent thread first. Include all context the implementer needs inside the issue body.
 
 ---

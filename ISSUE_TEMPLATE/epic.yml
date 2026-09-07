@@ -1,7 +1,9 @@
 name: Epic
 description: Cross-cutting initiative spanning multiple repos, milestones, or teams.
 title: "Epic: <initiative name>"
-labels: ["type:epic", "status:planned"]
+# Type is set via the native Issue Type field, not a label.
+labels: []
+type: Epic
 body:
   - type: markdown
     attributes:

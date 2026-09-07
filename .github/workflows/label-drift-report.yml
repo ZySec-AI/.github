@@ -1,0 +1,51 @@
+# =============================================================================
+# WORKFLOW: Label drift report
+# PURPOSE:  Weekly, human-readable summary of where the taxonomy is being fought
+# TRIGGERS: schedule (Mondays 09:00 UTC), workflow_dispatch
+# SECRETS:  ORG_ADMIN_TOKEN
+#
+# WHY:      The nightly sync writes to a job summary that nobody opens. If one
+#           label keeps reappearing, that is a signal the manifest is wrong
+#           rather than the person applying it — and that signal is worthless
+#           if it only lands in an Actions log.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: label drift report
+
+on:
+  schedule:
+    - cron: "0 9 * * MON"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  report:
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Build report
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Exit 1 means drift was found. That is the thing being reported, not
+          # a failure of the job.
+          python3 .github/scripts/reconcile_labels.py labels.yml > drift.md || true
+
+      - name: Post issue only if there is drift
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! grep -q "Off-manifest labels" drift.md; then
+            echo "No drift this week — not opening an issue."
+            cat drift.md >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh issue create --repo ZySec-AI/.github \
+            --title "Label drift — week of $(date -u +%Y-%m-%d)" \
+            --body-file drift.md \
+            --label "agent:check"

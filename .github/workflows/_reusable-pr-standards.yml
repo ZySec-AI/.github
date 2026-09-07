@@ -50,9 +50,15 @@ jobs:
           echo "Labels: ${LABELS:-<none>}"
 
           if [ -z "$LABELS" ]; then
-            echo "❌ PR must have at least one label (any org label is accepted)"
-            echo "   Examples: type:feature, type:bug, type:infra, type:chore, type:docs,"
-            echo "             severity:high, dimension:security, hotfix, bot-skip"
+            echo "❌ PR must have at least one label (any label on the org manifest is accepted)"
+            echo "   The taxonomy is https://github.com/ZySec-AI/.github/blob/develop/labels.yml"
+            echo "   Common choices: area:ui, area:ci, area:ops, layer:frontend,"
+            echo "                   layer:backend, security, regression,"
+            echo "                   bugfix (a pull request that fixes a defect)"
+            echo ""
+            echo "   Note: type, priority and severity are NOT labels any more."
+            echo "   Set the Issue Type (Bug/Feature/Task/Epic) and the Priority and"
+            echo "   Severity fields on the issue instead."
             exit 1
           fi
           echo "✓ at least one label present"

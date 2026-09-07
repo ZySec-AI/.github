@@ -1,0 +1,78 @@
+# =============================================================================
+# WORKFLOW: Label guard
+# PURPOSE:  Remove an off-manifest label within seconds of it being applied, so
+#           drift is corrected between nightly reconciles rather than piling up
+# TRIGGERS: issues/pull_request_target labeled
+# SECRETS:  ORG_ADMIN_TOKEN
+#
+# SECURITY: This runs with a token that can write to issues across the org, on a
+#           pull_request_target trigger. It therefore MUST NOT check out or
+#           execute pull request code. It reads exactly one untrusted value — the
+#           label name — and passes it through an environment variable rather
+#           than an expression interpolation, so a label named `$(...)` or
+#           `"; rm -rf /` is data and not shell.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: label guard
+
+on:
+  issues:
+    types: [labeled]
+  pull_request_target:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  guard:
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 5
+    steps:
+      # Deliberately checks out THIS repository at its default branch — never
+      # the pull request's head.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: ZySec-AI/.github
+
+      - name: Remove label if it is not on the manifest
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          LABEL: ${{ github.event.label.name }}
+          NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.event.sender.login }}
+        run: |
+          set -euo pipefail
+
+          if grep -qxF -- "- name: \"${LABEL}\"" labels.yml; then
+            echo "'${LABEL}' is on the manifest — nothing to do."
+            exit 0
+          fi
+
+          echo "'${LABEL}' is not on the manifest; removing from ${REPO}#${NUMBER}"
+          gh api -X DELETE "/repos/${REPO}/issues/${NUMBER}/labels/${LABEL}"
+
+          # Comment once per issue, not once per label: a bulk mistake should not
+          # produce a wall of identical comments.
+          MARKER="<!-- label-guard -->"
+          if gh api "/repos/${REPO}/issues/${NUMBER}/comments" --jq '.[].body' \
+               | grep -qF -- "$MARKER"; then
+            echo "already commented on this item"
+            exit 0
+          fi
+
+          gh api "/repos/${REPO}/issues/${NUMBER}/comments" -F body=@- <<COMMENT
+          ${MARKER}
+          @${ACTOR} — \`${LABEL}\` is not part of the ZySec-AI label taxonomy, so it was removed automatically.
+
+          The taxonomy lives in [\`labels.yml\`](https://github.com/ZySec-AI/.github/blob/develop/labels.yml). **Type, priority, severity, status, sprint, product and team are not labels** — they are native GitHub fields:
+
+          | You want | Use |
+          |---|---|
+          | Type | Issue Type: Bug / Feature / Task / Epic |
+          | Priority | Issue Priority field (P0–P3) |
+          | Severity | Issue Severity field |
+          | Status, Sprint, Product, Team | The Engineering Delivery project board |
+
+          If this label genuinely should exist, open a pull request against the manifest.
+          COMMENT
