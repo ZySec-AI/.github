@@ -193,15 +193,15 @@ jobs:
               ASSIGN_FLAG="--assignee $OWNER"
             fi
 
-            # Ensure ci-failure label exists (ignore error if it already does)
-            gh label create "ci-failure" -R "$REPO" \
-              --description "Auto-detected CI workflow failure" \
-              --color "D93F0B" 2>/dev/null || true
+            # No label creation here. `area:ci` is on the org manifest
+            # (ZySec-AI/.github/labels.yml) and the nightly reconcile guarantees
+            # it exists in every repo. Minting one here is how the old taxonomy
+            # kept regrowing after it was cleaned up.
 
             if ! gh issue create -R "$REPO" \
               --title "$TITLE" \
               --body-file "$BODY_FILE" \
-              --label "ci-failure" \
+              --label "area:ci" \
               $ASSIGN_FLAG 2>&1; then
               # Retry without label/assignee in case of permission issues
               gh issue create -R "$REPO" \

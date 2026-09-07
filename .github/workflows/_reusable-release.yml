@@ -1,6 +1,6 @@
 # =============================================================================
 # WORKFLOW: Reusable — Release
-# PURPOSE:  Ancestry guard (develop OR stage → release) → qa-approved gate
+# PURPOSE:  Ancestry guard (develop OR stage → release) → qa:verified gate
 #           → changelog → GitHub release → Teams notification
 # TRIGGERS: workflow_call
 # INPUTS:   environment (string), notify (bool)
@@ -80,7 +80,7 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - name: Check qa-approved label
+      - name: Check qa:verified label
         uses: actions/github-script@v7
         with:
           script: |
@@ -91,10 +91,13 @@ jobs:
             });
             const names = (pr.labels || []).map(l => l.name);
             core.info('Labels: ' + (names.join(', ') || '(none)'));
-            if (names.includes('qa-approved')) {
-              core.info('qa-approved label present');
+            // Renamed from `qa-approved` when the org taxonomy was enforced
+            // (T-326). The old label no longer exists anywhere, so this gate was
+            // failing every release PR — it could never be satisfied.
+            if (names.includes('qa:verified')) {
+              core.info('qa:verified label present');
             } else {
-              core.setFailed("This PR requires the 'qa-approved' label before merging to release. The QA team must validate on stage and apply the label.");
+              core.setFailed("This PR requires the 'qa:verified' label before merging to release. QA must validate on stage and apply it.");
             }
 
   changelog:

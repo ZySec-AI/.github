@@ -39,8 +39,8 @@ jobs:
             --base stage \
             --head develop \
             --title "promote: develop → stage" \
-            --body "$(printf 'Auto-opened after merge of #${{ github.event.pull_request.number }} to develop.\n\nQA: validate on stage and apply the `qa-approved` label before promoting to release.')" \
-            --label "type:chore" \
+            --body "$(printf 'Auto-opened after merge of #${{ github.event.pull_request.number }} to develop.\n\nQA: validate on stage and apply the `qa:verified` label before promoting to release.')" \
+            --label "area:ops" \
             && echo "✓ Opened develop → stage PR" \
             || echo "⚠️ Could not open PR — no diff or missing permissions"
 
@@ -64,7 +64,7 @@ jobs:
             --base release \
             --head stage \
             --title "promote: stage → release" \
-            --body "$(printf 'Auto-opened after merge of #${{ github.event.pull_request.number }} to stage.\n\nRequires `qa-approved` label and 1 approval before merging to release.')" \
-            --label "type:chore" \
+            --body "$(printf 'Auto-opened after merge of #${{ github.event.pull_request.number }} to stage.\n\nRequires `qa:verified` label and 1 approval before merging to release.')" \
+            --label "area:ops" \
             && echo "✓ Opened stage → release PR" \
             || echo "⚠️ Could not open PR — no diff or missing permissions"

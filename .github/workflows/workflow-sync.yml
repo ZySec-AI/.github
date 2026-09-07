@@ -187,7 +187,7 @@ jobs:
             --head "$BRANCH" \
             --title "chore(ci): sync workflow templates from .github org repo" \
             --body "Auto-synced workflow templates. Updates standard .github/workflows wrappers from org workflow-templates. Workflow Sync run: $SYNC_URL" \
-            --label "ci,cleanup" 2>/dev/null || \
+            --label "area:ci,area:ops" 2>/dev/null || \
           gh pr create \
             --base develop \
             --head "$BRANCH" \

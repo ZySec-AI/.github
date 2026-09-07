@@ -119,7 +119,7 @@ jobs:
           else
             gh issue create --repo ZySec-AI/.github \
               --title "$TITLE" \
-              --label "drift-audit,governance" \
+              --label "agent:check,area:governance" \
               --body "$BODY"
           fi
 
