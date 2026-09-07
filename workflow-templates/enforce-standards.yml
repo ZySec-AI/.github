@@ -19,4 +19,4 @@ permissions:
 
 jobs:
   enforce:
-    uses: ZySec-AI/.github/.github/workflows/_reusable-enforce-standards.yml@main
+    uses: ZySec-AI/.github/.github/workflows/_reusable-enforce-standards.yml@develop

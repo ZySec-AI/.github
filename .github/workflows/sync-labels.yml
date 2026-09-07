@@ -1,22 +1,40 @@
 # =============================================================================
-# WORKFLOW: Sync Canonical Labels Org-Wide
-# PURPOSE:  Ensures all non-archived org repos have the standard label set
-# TRIGGERS: schedule (daily 02:00 UTC), push to main (labels.json changed),
+# WORKFLOW: Sync canonical labels org-wide
+# PURPOSE:  Bring every non-archived repo to the taxonomy in /labels.yml
+# TRIGGERS: schedule (daily 03:17 UTC), push to develop (labels.yml changed),
 #           workflow_dispatch
 # SECRETS:  ORG_ADMIN_TOKEN
-# FIX:      Counter variables (CREATED, UPDATED) were inside a while/piped loop
-#           which runs in a subshell — counters always printed 0 in summary.
-#           Fixed by using process substitution (< <(...)) to keep the same shell.
+#
+# REPLACES: the previous version, which synced from .github/labels/labels.json —
+#           a second, different label list to the one in /labels.yml. Neither was
+#           enforced and the two disagreed. labels.json has been deleted.
+#
+# SAFETY:   This can delete labels across every repository, and deleting a label
+#           strips it from every issue it was ever on, irreversibly. So it
+#           REPORTS by default and deletes only when a human runs it with
+#           apply: true. The schedule never deletes.
 # CONTACT:  platform-eng@zysec.ai
 # =============================================================================
 name: sync canonical labels org-wide
 
 on:
   workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write changes (false = report only)"
+        type: boolean
+        default: false
+      repo:
+        description: "Limit to one repository (blank = all)"
+        type: string
+        default: ""
+  schedule:
+    - cron: "17 3 * * *"
   push:
     branches: [develop]
     paths:
-      - '.github/labels/labels.json'
+      - 'labels.yml'
+      - '.github/scripts/reconcile_labels.py'
       - '.github/workflows/sync-labels.yml'
 
 permissions: {}
@@ -28,75 +46,24 @@ concurrency:
 jobs:
   sync:
     runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - name: Sync labels to all org repos
+      - name: Reconcile
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          # Only a deliberate manual run may delete. Schedule and push report.
+          APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply || false }}
+          ONLY: ${{ inputs.repo }}
         run: |
           set -euo pipefail
+          args=(labels.yml)
+          [ "${APPLY}" = "true" ] && args+=(--apply)
+          [ -n "${ONLY:-}" ] && args+=(--repo "$ONLY")
+          # Exit 1 means drift was found, which is a report, not a failure.
+          python3 .github/scripts/reconcile_labels.py "${args[@]}" | tee report.md || true
 
-          LABELS_FILE=".github/labels/labels.json"
-
-          if [ ! -f "$LABELS_FILE" ]; then
-            echo "::error::$LABELS_FILE not found. Create the file first."
-            exit 1
-          fi
-
-          CREATED=0
-          UPDATED=0
-          ERRORS=0
-
-          # FIX: use process substitution (< <(...)) instead of pipe (| while read)
-          # Pipe creates a subshell — variables modified inside never propagate out.
-          # Process substitution keeps the while loop in the current shell.
-          while IFS= read -r REPO; do
-            echo "→ $REPO"
-
-            while IFS= read -r LABEL; do
-              NAME=$(echo  "$LABEL" | jq -r '.name')
-              COLOR=$(echo "$LABEL" | jq -r '.color')
-              DESC=$(echo  "$LABEL" | jq -r '.description // ""')
-
-              EXISTING=$(gh api "/repos/ZySec-AI/$REPO/labels/$NAME" 2>/dev/null || echo "")
-
-              if [ -z "$EXISTING" ]; then
-                if gh api -X POST "/repos/ZySec-AI/$REPO/labels" \
-                    -f name="$NAME" -f color="$COLOR" -f description="$DESC" \
-                    >/dev/null 2>&1; then
-                  echo "  + created '$NAME'"
-                  CREATED=$((CREATED + 1))
-                else
-                  echo "  ✗ failed to create '$NAME'"
-                  ERRORS=$((ERRORS + 1))
-                fi
-              else
-                CUR_COLOR=$(echo "$EXISTING" | jq -r '.color')
-                CUR_DESC=$(echo  "$EXISTING" | jq -r '.description // ""')
-                if [ "$CUR_COLOR" != "$COLOR" ] || [ "$CUR_DESC" != "$DESC" ]; then
-                  if gh api -X PATCH "/repos/ZySec-AI/$REPO/labels/$NAME" \
-                      -f color="$COLOR" -f description="$DESC" \
-                      >/dev/null 2>&1; then
-                    echo "  ~ updated '$NAME'"
-                    UPDATED=$((UPDATED + 1))
-                  else
-                    echo "  ✗ failed to update '$NAME'"
-                    ERRORS=$((ERRORS + 1))
-                  fi
-                fi
-              fi
-            done < <(jq -c '.[]' "$LABELS_FILE")
-
-          done < <(gh api --paginate /orgs/ZySec-AI/repos \
-            --jq '.[] | select(.archived==false) | .name')
-
-          echo ""
-          echo "Label sync complete"
-          echo "  Created : $CREATED"
-          echo "  Updated : $UPDATED"
-          echo "  Errors  : $ERRORS"
-
-          if [ "$ERRORS" -gt 0 ]; then
-            echo "::warning title=Label Sync::$ERRORS label(s) failed to sync. Check logs above."
-          fi
+      - name: Summarise
+        if: always()
+        run: cat report.md >> "$GITHUB_STEP_SUMMARY"

@@ -1,133 +1,176 @@
-# ZySec AI — Canonical Label Definitions
+# ZySec AI — the label taxonomy. This file is the definition; sync-labels.yml
+# enforces it across every non-archived repository in the organisation.
 #
-# Apply with: github-label-sync or similar tool.
-# Each repo inherits these labels. Repos may add their own `area:*` labels locally.
+# History worth knowing: this file previously held a 37-label scheme
+# (type:*, status:*, priority:*) that nothing applied, alongside a second and
+# different list in .github/labels/labels.json. Neither was enforced, so 141
+# divergent labels grew across the org and both files became fiction. The
+# labels.json duplicate has been deleted — one source of truth or none.
 #
-# Convention: colon-separated namespaces (type:bug, status:planned, priority:p1-high).
-# One label per category per issue (one type, one status, one priority).
-# Bugs get severity instead of (or in addition to) priority.
-
-# ─── Type (pick one) ────────────────────────────────────────────
-- name: "type:epic"
+# A label earns a place here only if no native GitHub field holds the same
+# information:
+#   Type      -> native Issue Types (Bug / Feature / Task / Epic)
+#   Priority  -> native issue Priority field (P0-P3)
+#   Severity  -> native issue Severity field
+#   Effort    -> native issue Effort field
+#   Status    -> Projects v2 Status field
+#   Sprint    -> Projects v2 Iteration field
+#   Product   -> Projects v2 Product field
+#   Team      -> Projects v2 Tech Lead field
+#
+# Changing this file changes every repository. Review accordingly.
+#
+- name: "found-in:production"
+  color: "B60205"
+  description: "A customer or production monitoring found this defect"
+- name: "found-in:internal"
+  color: "0E8A16"
+  description: "Found by QA, simulation, review or CI before release"
+- name: "security"
+  color: "B60205"
+  description: "Security work or a security-relevant defect"
+# Kept flat rather than `qa:regression`: `qa:*` records what verification
+# concluded, and a regression is a property of the defect. A customer can find one
+# in production, where QA was never involved.
+- name: "regression"
+  color: "D93F0B"
+  description: "Something that used to work and no longer does"
+- name: "bugfix"
   color: "5319E7"
-  description: "Cross-cutting initiative spanning multiple repos or milestones"
-- name: "type:feature"
-  color: "A2EEEF"
-  description: "New functionality"
-- name: "type:bug"
-  color: "D73A4A"
-  description: "Defect, regression, or incorrect behavior"
-- name: "type:task"
+  description: "Pull request that fixes a defect (PRs only — issues use Issue Type: Bug)"
+
+# --- QA verification outcome ------------------------------------------------
+# The board's `QA Validation` status means "needs verifying". These record what
+# verification concluded, which Status cannot hold because an item moves on.
+- name: "qa:verified"
+  color: "0E8A16"
+  description: "QA confirmed the fix works"
+- name: "qa:rejected"
+  color: "B60205"
+  description: "QA confirmed the fix does not work"
+- name: "qa:uat"
+  color: "FBCA04"
+  description: "In user acceptance testing"
+- name: "qa:uat-fail"
+  color: "B60205"
+  description: "Failed user acceptance testing"
+
+# --- Simulation programme ---------------------------------------------------
+- name: "sim:run"
   color: "1D76DB"
-  description: "Chore, refactor, infra, docs, test, or maintenance work"
-- name: "type:spec"
-  color: "5319E7"
-  description: "Design spec, architecture decision, manifest, or validation plan"
-- name: "type:chore"
+  description: "Raised by a simulated user journey"
+- name: "sim:highlight"
+  color: "1D76DB"
+  description: "Simulation cycle summary"
+- name: "sim:readiness"
+  color: "1D76DB"
+  description: "Release-readiness check"
+
+# --- Topic: a closed list ---------------------------------------------------
+# Engineers need to filter by subject. Without a supplied vocabulary they invent
+# one, and the enforcement becomes something to route around rather than use.
+- name: "area:auth"
+  color: "C5DEF5"
+  description: "Authentication and identity"
+- name: "area:authz"
+  color: "C5DEF5"
+  description: "Authorisation, roles and permissions"
+- name: "area:ui"
+  color: "C5DEF5"
+  description: "User interface, UX and accessibility"
+- name: "area:performance"
+  color: "C5DEF5"
+  description: "Latency, throughput and optimisation"
+- name: "area:reliability"
+  color: "C5DEF5"
+  description: "Availability, resilience and error handling"
+- name: "area:observability"
+  color: "C5DEF5"
+  description: "Logging, metrics, tracing and diagnostics"
+- name: "area:testing"
+  color: "C5DEF5"
+  description: "Test coverage and test infrastructure"
+- name: "area:ci"
+  color: "C5DEF5"
+  description: "Build pipeline and CI"
+- name: "area:ops"
+  color: "C5DEF5"
+  description: "Deployment, infrastructure and release operations"
+- name: "area:governance"
+  color: "C5DEF5"
+  description: "Compliance, audit and policy"
+- name: "area:multi-tenant"
+  color: "C5DEF5"
+  description: "Tenancy and data isolation"
+- name: "area:dx"
+  color: "C5DEF5"
+  description: "Developer experience and tooling"
+
+# --- Architectural layer -----------------------------------------------------
+# Deliberately NOT part of area:*. `area:` is a functional axis (auth, ui,
+# performance); this is an architectural one. An issue is legitimately both
+# `area:auth` and `layer:backend`, and collapsing them into one namespace would
+# make "area" mean two different things and filtering by it meaningless.
+#
+# The Cyberpod Tracker board carries the same idea in its `Component` field. These
+# labels exist because 57 of 66 repositories are not on any board.
+- name: "layer:frontend"
+  color: "BFD4F2"
+  description: "Client-side: UI, browser, mobile"
+- name: "layer:backend"
+  color: "BFD4F2"
+  description: "Server-side: APIs, services, data"
+- name: "layer:infra"
+  color: "BFD4F2"
+  description: "Infrastructure, deployment and platform plumbing"
+
+# --- Automation: applied by machines, never by people -----------------------
+- name: "agent:review"
   color: "EDEDED"
-  description: "Maintenance, tooling, dependency updates"
-- name: "type:tech-debt"
-  color: "FBCA04"
-  description: "Refactor, cleanup, migration, or maintainability work"
-- name: "type:docs"
-  color: "0075CA"
-  description: "Documentation only"
-- name: "type:infra"
-  color: "5319E7"
-  description: "CI, deployment, Kubernetes, tooling"
-- name: "type:test"
-  color: "0052CC"
-  description: "Tests only — no production code changes"
-
-# ─── Status (pick one) ──────────────────────────────────────────
-- name: "status:planned"
-  color: "C2E0C6"
-  description: "Not started yet"
-- name: "status:ready"
-  color: "0E8A16"
-  description: "Specs complete, ready to implement"
-- name: "status:in-progress"
-  color: "FBCA04"
-  description: "Active implementation"
-- name: "status:blocked"
-  color: "E11D21"
-  description: "Waiting on dependency or decision"
-- name: "status:done"
-  color: "0E8A16"
-  description: "Completed and validated"
-- name: "status:superseded"
-  color: "BFDADC"
-  description: "Replaced by another issue"
-
-# ─── Priority (pick one) ────────────────────────────────────────
-- name: "priority:p0-critical"
-  color: "B60205"
-  description: "Blocker — must ship now"
-- name: "priority:p1-high"
-  color: "D93F0B"
-  description: "Important — current sprint"
-- name: "priority:p2-normal"
-  color: "FBCA04"
-  description: "Normal priority"
-- name: "priority:p3-low"
-  color: "0E8A16"
-  description: "Nice to have"
-
-# ─── Severity (for bugs and audit findings) ─────────────────────
-- name: "severity:critical"
-  color: "B60205"
-  description: "Fix immediately — production impact"
-- name: "severity:high"
-  color: "D93F0B"
-  description: "Fix soon — significant impact"
-- name: "severity:medium"
-  color: "FBCA04"
-  description: "Fix when possible — moderate impact"
-- name: "severity:low"
-  color: "C2E0C6"
-  description: "Fix eventually — minor impact"
-
-# ─── Dimension (for review and audit findings) ──────────────────
-- name: "dimension:security"
-  color: "EE0701"
-  description: "Security finding (OWASP, CVE, secrets)"
-- name: "dimension:quality"
-  color: "5319E7"
-  description: "Code quality (dead code, complexity, conventions)"
-- name: "dimension:deps"
-  color: "0366D6"
-  description: "Dependency health (outdated, vulnerable)"
-- name: "dimension:perf"
-  color: "F9D0C4"
-  description: "Performance"
-- name: "dimension:ui"
-  color: "E99695"
-  description: "UI / accessibility"
-
-# ─── Automation (workflow labels) ────────────────────────────────
-- name: "bot-reviewed"
-  color: "6F42C1"
-  description: "Triage bot has classified this issue"
-- name: "bot-skip"
+  description: "Awaiting automated review"
+- name: "agent:reviewed"
   color: "EDEDED"
-  description: "Skip triage bot processing"
-- name: "auto-fixable"
-  color: "0E8A16"
-  description: "Bot assessed as likely auto-fixable"
-- name: "needs-info"
-  color: "FBCA04"
-  description: "Needs more context from requester"
-- name: "good-first-issue"
-  color: "7057FF"
-  description: "Good for newcomers"
+  description: "Automated review completed"
+- name: "agent:needs-info"
+  color: "EDEDED"
+  description: "Automation could not proceed without more detail"
+- name: "agent:self-heal"
+  color: "EDEDED"
+  description: "Raised by self-healing automation"
+- name: "agent:check"
+  color: "EDEDED"
+  description: "Raised by an automated check (lint, architecture, fast validation)"
+- name: "agent:task"
+  color: "EDEDED"
+  description: "Harness work item"
+- name: "agent:ready-for-dev"
+  color: "EDEDED"
+  description: "Harness: ready to be picked up"
+- name: "agent:dev-pass"
+  color: "EDEDED"
+  description: "Harness: implementation succeeded"
+- name: "agent:dev-fail"
+  color: "EDEDED"
+  description: "Harness: implementation failed"
+- name: "agent:review-pass"
+  color: "EDEDED"
+  description: "Harness: review passed"
+- name: "agent:review-fail"
+  color: "EDEDED"
+  description: "Harness: review failed"
+- name: "agent:test-pass"
+  color: "EDEDED"
+  description: "Harness: tests passed"
+- name: "agent:test-fail"
+  color: "EDEDED"
+  description: "Harness: tests failed"
+- name: "agent:needs-rework"
+  color: "EDEDED"
+  description: "Harness: returned for rework"
+- name: "agent:ready-to-merge"
+  color: "EDEDED"
+  description: "Harness: all gates passed"
 
-# ─── Simulation (from /simulate cycles) ─────────────────────────
-- name: "sim"
-  color: "E4E669"
-  description: "Found by simulation"
-- name: "carry"
-  color: "FF6B35"
-  description: "Bug surviving 2+ simulation cycles"
-- name: "highlight"
-  color: "0E8A16"
-  description: "Positive product signal"
+# --- Forced by tooling ------------------------------------------------------
+# Dependabot creates this automatically. Omitting it would make the guard workflow
+# fight a bot in perpetuity.

@@ -1,7 +1,9 @@
 name: Work
 description: Feature, task, spec, chore, tech-debt, docs, infra, or test work.
 title: "<short title>"
-labels: ["status:planned"]
+# Status lives on the Engineering Delivery board, not in a label.
+labels: []
+type: Task
 body:
   - type: dropdown
     id: work_type

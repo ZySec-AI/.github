@@ -1,7 +1,9 @@
 name: Bug
 description: Something is broken, regressed, or behaves unexpectedly.
 title: "Bug: <short description>"
-labels: ["type:bug", "status:planned"]
+# Type is set via the native Issue Type field, not a label.
+labels: []
+type: Bug
 body:
   - type: markdown
     attributes:
