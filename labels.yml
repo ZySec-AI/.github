@@ -125,6 +125,9 @@
   description: "Infrastructure, deployment and platform plumbing"
 
 # --- Automation: applied by machines, never by people -----------------------
+- name: "agent:skip"
+  color: "EDEDED"
+  description: "Opt this issue or PR out of automated review and auto-fix"
 - name: "agent:review"
   color: "EDEDED"
   description: "Awaiting automated review"
