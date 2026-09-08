@@ -29,6 +29,16 @@
 - name: "security"
   color: "B60205"
   description: "Security work or a security-relevant defect"
+# Applied by Dependabot itself, via `labels: ["dependencies"]` in each
+# repository's .github/dependabot.yml. It earns a place here because no native
+# field records "this change came from Dependabot rather than a person", and
+# without it every automated bump is indistinguishable from human work in any
+# query. Removed from the taxonomy on 2026-09-07 as unused; restored on
+# 2026-09-08 once Dependabot was enabled org-wide and there was something to
+# track.
+- name: "dependencies"
+  color: "0366D6"
+  description: "Automated dependency update raised by Dependabot"
 # Kept flat rather than `qa:regression`: `qa:*` records what verification
 # concluded, and a regression is a property of the defect. A customer can find one
 # in production, where QA was never involved.
