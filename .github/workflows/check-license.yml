@@ -11,4 +11,6 @@ permissions:
 jobs:
   check-license:
     uses: ZySec-AI/.github/.github/workflows/_reusable-check-license.yml@develop
+    with:
+      runs_on: '["ubuntu-latest"]'
     secrets: inherit
