@@ -17,5 +17,6 @@ jobs:
     uses: ZySec-AI/.github/.github/workflows/_reusable-release.yml@develop
     secrets: inherit
     with:
+      runs_on: '["ubuntu-latest"]'
       environment: production
       notify: true
