@@ -25,4 +25,5 @@ jobs:
     uses: ZySec-AI/.github/.github/workflows/_reusable-quality.yml@develop
     secrets: inherit
     with:
+      runs_on: '["ubuntu-latest"]'
       auto_detect: true
