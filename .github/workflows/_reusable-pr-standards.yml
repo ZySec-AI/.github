@@ -2,6 +2,18 @@ name: pr standards (reusable)
 
 on:
   workflow_call:
+    inputs:
+      # Runner labels, as a JSON array string. Defaults to the org's self-hosted
+      # CI pool, so every private repository that calls this is unaffected.
+      #
+      # ZySec-AI/.github is a *public* repository and runner group 4 sets
+      # allows_public_repositories=false, so a self-hosted job there queues for
+      # ever — and would be a fork-PR attack path on shared, persistent runners
+      # if that setting were ever relaxed. It passes '["ubuntu-latest"]'.
+      runs_on:
+        type: string
+        required: false
+        default: '["self-hosted","linux","x64","zysec-ai-ci"]'
     secrets:
       ORG_ADMIN_TOKEN:
         required: false
@@ -18,7 +30,7 @@ permissions:
 jobs:
   validate:
     name: Validate PR metadata
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     steps:
       - name: Check PR has description
         env:
