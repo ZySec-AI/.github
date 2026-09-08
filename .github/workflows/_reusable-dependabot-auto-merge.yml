@@ -1,0 +1,56 @@
+# PURPOSE:  Auto-approve and merge Dependabot patch/minor updates; leave major
+#           updates for a person, with a comment saying why.
+# CALLED BY: each repository's .github/workflows/dependabot-auto-merge.yml
+#
+# WHY reusable: Dependabot's own config (.github/dependabot.yml) cannot be
+#               inherited from this repository — GitHub reads it only from each
+#               repo's own .github/ — but the *workflow* can be, so the logic
+#               lives here once instead of being copied into 43 repositories.
+#
+# WHY no labels: `dependencies` is applied by Dependabot itself via `labels:` in
+#                each repo's dependabot.yml, so nothing here needs to add it. An
+#                earlier version added "dependencies,needs-review" by hand;
+#                neither was in the taxonomy at the time, so `gh pr edit
+#                --add-label` failed the job on every major update.
+
+name: Reusable — Dependabot Auto-Merge
+
+on:
+  workflow_call:
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  auto-merge:
+    name: Auto-merge Dependabot PRs
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-approve and merge patch/minor updates
+        if: >
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          gh pr review "${{ github.event.pull_request.number }}" --approve \
+            --body "Dependabot ${{ steps.meta.outputs.update-type }} — auto-approved."
+          gh pr merge "${{ github.event.pull_request.number }}" --squash --auto || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # A major update is simply not auto-merged — that *is* the manual review.
+      - name: Explain why a major update was not merged
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --body \
+            "Major version update (\`${{ steps.meta.outputs.dependency-names }}\`) — not auto-merged. Review the changelog for breaking changes before merging."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
