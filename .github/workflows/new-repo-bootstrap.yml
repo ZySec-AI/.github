@@ -64,6 +64,7 @@ jobs:
             ["branch-flow-check.yml"]="branch naming + merge flow validation"
             ["pr-standards.yml"]="PR description + type label validation"
             ["merge-comment.yml"]="PR checklist comment on develop PRs"
+            ["dependabot-auto-merge.yml"]="auto-approve + merge Dependabot patch/minor"
             ["stale.yml"]="stale PR/issue notifier"
             ["code-freeze.yml"]="weekly code freeze reminders"
             ["sprint-retro.yml"]="weekly sprint retro issue"
@@ -140,6 +141,64 @@ jobs:
             fi
           }
 
+          # develop/stage/release on every repo. Bootstrap previously created
+          # only develop, so 11 repositories were missing stage and/or release
+          # and had to be fixed by hand on 2026-09-09.
+          ensure_branches() {
+            local REPO="$1"
+            local SHA
+            SHA=$(gh api "/repos/ZySec-AI/$REPO/git/refs/heads/develop" --jq '.object.sha' 2>/dev/null || echo "")
+            [ -z "$SHA" ] && return 0
+            for B in stage release; do
+              if ! gh api "/repos/ZySec-AI/$REPO/branches/$B" --silent >/dev/null 2>&1; then
+                gh api -X POST "/repos/ZySec-AI/$REPO/git/refs" \
+                  -f ref="refs/heads/$B" -f sha="$SHA" >/dev/null 2>&1 \
+                  && echo "  ✓ $B branch created"
+              fi
+            done
+          }
+
+          # Dependabot's version-update config. GitHub reads .github/dependabot.yml
+          # only from each repository — there is no organisation-level version and
+          # no inheritance, which is why this has to be written per repo. Alerts
+          # and security updates ARE org-level and need nothing here.
+          #
+          # Ecosystems are detected from marker files at the root; a config naming
+          # an ecosystem the repo does not use is silently ignored by Dependabot,
+          # but detecting keeps the file honest and reviewable.
+          #
+          # labels: ["dependencies"] is deliberate — it is in the org taxonomy
+          # (labels.yml), so sync-labels.yml keeps it and every automated bump is
+          # filterable. Leaving it unset makes Dependabot invent the label anyway.
+          ensure_dependabot_config() {
+            local REPO="$1"
+            gh api "/repos/ZySec-AI/$REPO/contents/.github/dependabot.yml" --silent >/dev/null 2>&1 && return 0
+
+            local TREE ECOS=""
+            TREE=$(gh api "/repos/ZySec-AI/$REPO/git/trees/develop" --jq '[.tree[]|select(.type=="blob")|.path]|join(" ")' 2>/dev/null || echo "")
+            case "$TREE" in *package.json*)   ECOS="$ECOS npm";; esac
+            case "$TREE" in *requirements.txt*|*pyproject.toml*|*setup.py*) ECOS="$ECOS pip";; esac
+            case "$TREE" in *go.mod*)         ECOS="$ECOS gomod";; esac
+            case "$TREE" in *Cargo.toml*)     ECOS="$ECOS cargo";; esac
+            case "$TREE" in *Gemfile*)        ECOS="$ECOS bundler";; esac
+            case "$TREE" in *composer.json*)  ECOS="$ECOS composer";; esac
+            case "$TREE" in *Dockerfile*)     ECOS="$ECOS docker";; esac
+
+            local BODY="version: 2\nupdates:\n"
+            for E in $ECOS; do
+              BODY="$BODY  - package-ecosystem: \"$E\"\n    directory: \"/\"\n    schedule:\n      interval: \"weekly\"\n      day: \"monday\"\n      time: \"03:00\"\n      timezone: \"UTC\"\n    open-pull-requests-limit: 10\n    labels: [\"dependencies\"]\n    commit-message:\n      prefix: \"deps\"\n    groups:\n      minor-and-patch:\n        update-types:\n          - \"minor\"\n          - \"patch\"\n    reviewers:\n      - \"ZySec-AI/org-maintenance\"\n\n"
+            done
+            # github-actions applies to every repository that has workflows.
+            BODY="$BODY  - package-ecosystem: \"github-actions\"\n    directory: \".github/workflows\"\n    schedule:\n      interval: \"weekly\"\n      day: \"monday\"\n      time: \"03:00\"\n      timezone: \"UTC\"\n    open-pull-requests-limit: 5\n    labels: [\"dependencies\"]\n    commit-message:\n      prefix: \"ci\"\n    groups:\n      actions:\n        update-types:\n          - \"minor\"\n          - \"patch\"\n"
+
+            local ENCODED
+            ENCODED=$(printf '%b' "$BODY" | base64 -w0)
+            gh api -X PUT "/repos/ZySec-AI/$REPO/contents/.github/dependabot.yml" \
+              -f message="chore: add Dependabot config (bootstrap)" \
+              -f content="$ENCODED" -f branch=develop >/dev/null 2>&1 \
+              && echo "  ✓ dependabot.yml created (${ECOS:- } github-actions)"
+          }
+
           BOOTSTRAPPED=0
           UPDATED=0
           PROTECTED=0
@@ -214,6 +273,11 @@ jobs:
 
               BOOTSTRAPPED=$((BOOTSTRAPPED+1))
             fi
+
+            # Branches before protection: a rule cannot attach to a ref that
+            # does not exist yet.
+            ensure_branches "$REPO"
+            ensure_dependabot_config "$REPO"
 
             # Apply branch protection on every bootstrap (new repos need it)
             apply_branch_protection "$REPO" && PROTECTED=$((PROTECTED+1)) || true
