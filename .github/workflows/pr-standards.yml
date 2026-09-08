@@ -12,5 +12,7 @@ permissions:
 jobs:
   validate:
     uses: ./.github/workflows/_reusable-pr-standards.yml
+    with:
+      runs_on: '["ubuntu-latest"]'
     secrets:
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
