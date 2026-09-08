@@ -30,6 +30,7 @@ jobs:
     if: github.event_name != 'pull_request'
     uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
     with:
+      runs_on: '["ubuntu-latest"]'
       auto_detect: true
       fast-mode: ${{ github.ref != 'refs/heads/release' && github.ref != 'refs/heads/stage' }}
     secrets: inherit
@@ -40,6 +41,7 @@ jobs:
     if: github.event_name == 'pull_request' && (github.base_ref == 'develop' || github.base_ref == 'stage')
     uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
     with:
+      runs_on: '["ubuntu-latest"]'
       auto_detect: true
       fast-mode: true
     secrets: inherit
@@ -53,6 +55,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'hotfix')
     uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
     with:
+      runs_on: '["ubuntu-latest"]'
       auto_detect: true
       fast-mode: true
     secrets: inherit
@@ -66,6 +69,7 @@ jobs:
       !contains(github.event.pull_request.labels.*.name, 'hotfix')
     uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
     with:
+      runs_on: '["ubuntu-latest"]'
       auto_detect: true
       fast-mode: false
     secrets: inherit
