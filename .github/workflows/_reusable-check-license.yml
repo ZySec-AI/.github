@@ -2,6 +2,18 @@ name: check license (reusable)
 
 on:
   workflow_call:
+    inputs:
+      # Runner labels, as a JSON array string. Defaults to the org's self-hosted
+      # CI pool, so every private repository that calls this is unaffected.
+      #
+      # ZySec-AI/.github is a *public* repository and runner group 4 sets
+      # allows_public_repositories=false, so a self-hosted job there queues for
+      # ever — and would be a fork-PR attack path on shared, persistent runners
+      # if that setting were ever relaxed. It passes '["ubuntu-latest"]'.
+      runs_on:
+        type: string
+        required: false
+        default: '["self-hosted","linux","x64","zysec-ai-ci"]'
 
 # PR-only reusable workflow (reads github.event.pull_request.*) — a new
 # commit supersedes whatever check is already running for the same PR.
@@ -16,7 +28,7 @@ permissions:
 jobs:
   check-license:
     name: Check for incompatible license text
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
