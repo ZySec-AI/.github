@@ -12,6 +12,17 @@ name: release (reusable)
 on:
   workflow_call:
     inputs:
+      # Runner labels, as a JSON array string. Defaults to the org's self-hosted
+      # CI pool, so every private repository that calls this is unaffected.
+      #
+      # ZySec-AI/.github is a *public* repository and runner group 4 sets
+      # allows_public_repositories=false, so a self-hosted job there queues for
+      # ever — and would be a fork-PR attack path on shared, persistent runners
+      # if that setting were ever relaxed. It passes '["ubuntu-latest"]'.
+      runs_on:
+        type: string
+        required: false
+        default: '["self-hosted","linux","x64","zysec-ai-ci"]'
       environment:
         type: string
         default: production
@@ -33,7 +44,7 @@ concurrency:
 jobs:
   guard:
     name: Guard — develop or stage must be ancestor of release
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -73,7 +84,7 @@ jobs:
 
   qa-gate:
     name: QA Sign-off Gate
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 5
     needs: guard
     if: github.event_name == 'pull_request'
@@ -102,7 +113,7 @@ jobs:
 
   changelog:
     name: Generate Changelog
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 10
     needs: guard
     outputs:
@@ -192,7 +203,7 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 10
     needs: [guard, changelog]
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/release'
@@ -231,7 +242,7 @@ jobs:
 
   notify:
     name: Notify Teams
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 5
     needs: [github-release, changelog]
     # FIX: was `if: inputs.notify && always()` — fired even when guard failed,
