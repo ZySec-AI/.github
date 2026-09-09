@@ -92,6 +92,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
+          rm -rf target
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository_owner }}/${{ matrix.repo }}.git" target
           cd target
           git config user.name "github-actions[bot]"
