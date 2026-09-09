@@ -26,7 +26,7 @@ jobs:
   auto-merge:
     name: Auto-merge Dependabot PRs
     if: github.actor == 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 10
     steps:
       - name: Fetch Dependabot metadata
