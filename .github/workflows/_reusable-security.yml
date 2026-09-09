@@ -1,14 +1,22 @@
 # =============================================================================
 # WORKFLOW: Reusable - Security Scanning
-# PURPOSE:  Runs gitleaks secret scan, CodeQL SAST, dependency-review,
+# PURPOSE:  Runs gitleaks secret scan, dependency-review,
 #           trivy filesystem + container scans, and auto-opens GitHub issues
 #           for HIGH/CRITICAL findings on non-PR runs (push/schedule).
 # TRIGGERS: workflow_call
-# INPUTS:   python (bool, default true), node (bool, default true),
-#           rust (bool, default false), fast-mode (bool, default false)
+# INPUTS:   python, node, rust, fast-mode - all retained for caller
+#           compatibility only; see the note on CodeQL removal below.
 # SECRETS:  ORG_ADMIN_TOKEN, TRIVY_TEAM_WEBHOOK (optional)
-# WHY fast-mode: hotfix path needs <5min; skips CodeQL (slow) but keeps
-#                gitleaks + trivy (fast, highest-value for hotfixes)
+# WHY no CodeQL: the sast-codeql job was removed on 2026-09-09. It had been
+#                skipped on every run across all 43 repositories, because its
+#                language detection returned an empty list, so it produced no
+#                findings while implying SAST coverage existed. GitHub Advanced
+#                Security is off org-wide (0 billable committers), so it was
+#                also costing nothing. Restoring it means fixing detection
+#                first, not just re-adding the job.
+# WHY fast-mode is now inert: it only ever gated CodeQL. Callers still pass it
+#                and it is still declared, so nothing breaks, but the fast and
+#                full paths now run the same jobs.
 # CONTACT:  platform-eng@zysec.ai
 # =============================================================================
 name: security scan (reusable)
@@ -32,11 +40,11 @@ on:
         type: boolean
         default: true
       python:
-        description: 'Enable Python-specific scans (CodeQL python)'
+        description: 'No-op since CodeQL removal. Declared so existing callers do not break.'
         type: boolean
         default: false
       node:
-        description: 'Enable Node-specific scans (CodeQL javascript)'
+        description: 'No-op since CodeQL removal. Declared so existing callers do not break.'
         type: boolean
         default: false
       rust:
@@ -50,7 +58,7 @@ on:
         type: string
         default: ''
       fast-mode:
-        description: 'Skip slow scans (CodeQL) - used by hotfix fast-path'
+        description: 'No-op since CodeQL removal. Declared so existing callers do not break.'
         type: boolean
         default: false
     secrets:
@@ -74,7 +82,6 @@ jobs:
       node: ${{ steps.detect.outputs.node }}
       rust: ${{ steps.detect.outputs.rust }}
       docker: ${{ steps.detect.outputs.docker }}
-      codeql_languages: ${{ steps.detect.outputs.codeql_languages }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,14 +96,6 @@ jobs:
           echo "node=$nd" >> "$GITHUB_OUTPUT"
           echo "rust=$rs" >> "$GITHUB_OUTPUT"
           echo "docker=$dk" >> "$GITHUB_OUTPUT"
-          langs='[]'
-          [ "$py" = "1" ] && langs='["python"]'
-          if [ "$py" = "1" ] && [ "$nd" = "1" ]; then
-            langs='["python","javascript"]'
-          elif [ "$nd" = "1" ]; then
-            langs='["javascript"]'
-          fi
-          echo "codeql_languages=$langs" >> "$GITHUB_OUTPUT"
 
   secret-scan:
     name: Secret Scan (gitleaks)
@@ -133,57 +132,6 @@ jobs:
         run: |
           set -euo pipefail
           gitleaks detect --source . --redact --verbose --exit-code 1
-
-  sast-codeql:
-    name: SAST - CodeQL
-    needs: detect
-    if: |
-      always() && !inputs.fast-mode && (
-        (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.codeql_languages != '[]') ||
-        (!inputs.auto_detect && (inputs.python || inputs.node))
-      )
-    runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 45
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ${{ fromJSON(
-          inputs.auto_detect && needs.detect.outputs.codeql_languages ||
-          (inputs.python && inputs.node) && '["python","javascript"]' ||
-          inputs.python && '["python"]' ||
-          inputs.node && '["javascript"]' ||
-          '[]') }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - uses: github/codeql-action/init@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
-        with:
-          languages: ${{ matrix.language }}
-          queries: security-extended,security-and-quality
-      - uses: github/codeql-action/autobuild@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
-      - uses: github/codeql-action/analyze@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
-        id: codeql-analyze
-        with:
-          category: "/language:${{ matrix.language }}"
-          output: /tmp/codeql-sarif
-          upload: never
-      # ponytail: upload separated so GHAS-not-enabled is a warning, not a job failure
-      - uses: github/codeql-action/upload-sarif@f35333b910470a5408cb081b68f0701254a7d27b  # v3.28.18
-        continue-on-error: true
-        with:
-          sarif_file: /tmp/codeql-sarif
-          category: "/language:${{ matrix.language }}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-        if: always()
-        continue-on-error: true
-        with:
-          name: codeql-sarif-${{ matrix.language }}-${{ github.run_id }}
-          path: /tmp/codeql-sarif
-          if-no-files-found: ignore
-          retention-days: 14
 
   dep-review:
     name: Dependency Review
