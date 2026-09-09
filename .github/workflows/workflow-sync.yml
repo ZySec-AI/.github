@@ -2,18 +2,12 @@
 # WORKFLOW: Workflow Sync (org-wide)
 # PURPOSE:  Daily sync of standard workflow wrapper files from canonical
 #           templates in this repo. Opens PRs for repos with drift.
-# TRIGGER:  Daily at 07:17 UTC | manual dispatch
+# TRIGGER:  Manual dispatch only
 # SECRETS:  ORG_ADMIN_TOKEN (org secret, visibility: all repos; scopes: repo, workflow)
 # =============================================================================
 name: Workflow Sync
 
 on:
-  push:
-    branches: [develop]
-    paths:
-      - 'workflow-templates/**'
-      - '.github/workflows/_reusable-*.yml'
-      - '.github/repo-policy.yml'
   workflow_dispatch:
     inputs:
       dry_run:
