@@ -32,14 +32,8 @@ permissions:
 jobs:
   list-repos:
     name: Discover repos
-    # GitHub-hosted on purpose. This workflow runs *in* ZySec-AI/.github, which
-    # is a public repository, and runner group 4 (the zysec-ai-ci runners) sets
-    # allows_public_repositories=false — so a self-hosted job here queues for
-    # ever. The oldest such run sat unstarted for 31 hours. These are API
-    # scripts, not builds, and GitHub-hosted minutes are free for public repos.
-    # The _reusable-*.yml workflows keep self-hosted: they run in the caller's
-    # context, which is a private repo with access to group 4.
-    runs-on: ubuntu-latest
+    # Run organization sync work on the shared CI runner pool.
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     outputs:
       repos: ${{ steps.repos.outputs.repos }}
     steps:
@@ -71,7 +65,7 @@ jobs:
   sync:
     name: Sync ${{ matrix.repo }}
     needs: list-repos
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 5
     strategy:
       fail-fast: false
