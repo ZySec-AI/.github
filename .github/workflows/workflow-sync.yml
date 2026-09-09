@@ -1,19 +1,14 @@
 # =============================================================================
 # WORKFLOW: Workflow Sync (org-wide)
-# PURPOSE:  Daily sync of standard workflow wrapper files from canonical
-#           templates in this repo. Opens PRs for repos with drift.
-# TRIGGER:  Daily at 07:17 UTC | manual dispatch
+# PURPOSE:  Manual sync of standard workflow wrapper files from canonical
+#           templates in this repo. Opens PRs for repos with drift, or directly
+#           updates develop when auto_merge is explicitly enabled.
+# TRIGGER:  Manual dispatch only
 # SECRETS:  ORG_ADMIN_TOKEN (org secret, visibility: all repos; scopes: repo, workflow)
 # =============================================================================
 name: Workflow Sync
 
 on:
-  push:
-    branches: [develop]
-    paths:
-      - 'workflow-templates/**'
-      - '.github/workflows/_reusable-*.yml'
-      - '.github/repo-policy.yml'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -105,7 +100,7 @@ jobs:
           TEMPLATES=(
             develop.yml
             quality.yml
-            security.yml
+            security-scan.yml
             hotfix-security.yml
             check-license.yml
             release.yml
@@ -135,6 +130,19 @@ jobs:
             fi
           done
 
+          # The security workflow migration is intentionally available only on
+          # an explicit manual direct-sync run. It creates the new workflow
+          # path and removes the legacy path in one commit.
+          if [ "${{ inputs.auto_merge }}" = "true" ]; then
+            NEW_TEMPLATE="templates/workflow-templates/security-scan.yml"
+            NEW_TARGET="target/.github/workflows/security-scan.yml"
+            OLD_TARGET="target/.github/workflows/security.yml"
+            if [ ! -f "$NEW_TARGET" ] || [ -f "$OLD_TARGET" ] || ! diff -q "$NEW_TEMPLATE" "$NEW_TARGET" >/dev/null 2>&1; then
+              echo "DRIFT detected in security workflow migration"
+              DRIFT=true
+            fi
+          fi
+
           echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
 
       - name: Apply workflow sync
@@ -149,7 +157,7 @@ jobs:
           TEMPLATES=(
             develop.yml
             quality.yml
-            security.yml
+            security-scan.yml
             hotfix-security.yml
             check-license.yml
             release.yml
@@ -172,7 +180,16 @@ jobs:
             [ -f "$TEMPLATE_PATH" ] && [ -f "$TARGET_PATH" ] && cp "$TEMPLATE_PATH" "$TARGET_PATH"
           done
 
-          git add .github/workflows/
+          # Migrate only for an explicit manual direct-sync run. Keeping this
+          # out of normal PR syncs prevents an ordinary template update from
+          # deleting a workflow in every repository.
+          if [ "$AUTO_MERGE" = "true" ]; then
+            mkdir -p .github/workflows
+            cp ../templates/workflow-templates/security-scan.yml .github/workflows/security-scan.yml
+            rm -f .github/workflows/security.yml
+          fi
+
+          git add -A .github/workflows/
           git diff --cached --quiet && { echo "No actual changes"; exit 0; }
 
           if [ "$DRY_RUN" = "true" ]; then
