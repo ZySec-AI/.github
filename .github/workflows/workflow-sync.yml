@@ -24,6 +24,10 @@ on:
         description: 'Comma-separated list of repos (default: all non-archived)'
         type: string
         default: ''
+      auto_merge:
+        description: 'Commit workflow changes directly to develop; when repos is empty, apply to all repositories'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -52,6 +56,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             [ "${{ inputs.auto_merge }}" != "true" ] && \
+             [ -z "${{ inputs.repos }}" ]; then
+            echo "::error::Provide repos when auto_merge is false."
+            exit 1
+          fi
+
           if [ -n "${{ inputs.repos }}" ]; then
             REPOS=$(echo "${{ inputs.repos }}" | tr ',' '\n' | jq -R . | jq -s -c .)
           else
@@ -125,15 +136,14 @@ jobs:
 
           echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
 
-      - name: Create sync PR
+      - name: Apply workflow sync
         if: steps.drift.outputs.drift == 'true'
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run || false }}
+          AUTO_MERGE: ${{ inputs.auto_merge || false }}
         run: |
           cd target
-          BRANCH="ci/sync-workflow-templates-$(date +%Y%m%d)"
-          git checkout -b "$BRANCH"
 
           TEMPLATES=(
             develop.yml
@@ -164,15 +174,25 @@ jobs:
           git add .github/workflows/
           git diff --cached --quiet && { echo "No actual changes"; exit 0; }
 
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN: would apply workflow changes"
+            git diff --cached --stat
+            exit 0
+          fi
+
+          if [ "$AUTO_MERGE" = "true" ]; then
+            git commit -m "chore(ci): sync workflow templates from .github org repo" \
+              -m "Auto-synced by Workflow Sync workflow."
+            git push origin HEAD:develop
+            echo "Directly updated develop in ${{ matrix.repo }}"
+            exit 0
+          fi
+
+          BRANCH="ci/sync-workflow-templates-$(date +%Y%m%d)"
+          git checkout -b "$BRANCH"
           git commit \
             -m "chore(ci): sync workflow templates from .github org repo" \
             -m "Auto-synced by Workflow Sync workflow."
-
-          if [ "$DRY_RUN" = "true" ]; then
-            echo "DRY RUN: would push branch $BRANCH and create PR"
-            git diff HEAD~1 --stat
-            exit 0
-          fi
 
           git push -u origin "$BRANCH"
 
