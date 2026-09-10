@@ -100,21 +100,53 @@ jobs:
           git config --global --replace-all url."https://${{ secrets.ORG_ADMIN_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: |
+          if [ -f pyproject.toml ] && [ -f uv.lock ]; then
+            echo "PYTHON_QUALITY_RUNNER=uv" >> "$GITHUB_ENV"
+            uv sync --frozen
+          elif [ -f requirements.txt ]; then
+            echo "PYTHON_QUALITY_RUNNER=pip" >> "$GITHUB_ENV"
+            python -m pip install --upgrade pip
+            python -m pip install -r requirements.txt
+            python -m pip install ruff mypy pytest pytest-cov
+          else
+            echo "No supported Python dependency file found. Expected pyproject.toml + uv.lock or requirements.txt."
+            exit 1
+          fi
 
       - name: Ruff lint
-        run: uv run ruff check . --output-format=github
+        run: |
+          if [ "$PYTHON_QUALITY_RUNNER" = "uv" ]; then
+            uv run ruff check . --output-format=github
+          else
+            ruff check . --output-format=github
+          fi
 
       - name: Ruff format
-        run: uv run ruff format --check .
+        run: |
+          if [ "$PYTHON_QUALITY_RUNNER" = "uv" ]; then
+            uv run ruff format --check .
+          else
+            ruff format --check .
+          fi
 
       - name: MyPy type check
-        run: uv run mypy . --ignore-missing-imports
+        run: |
+          if [ "$PYTHON_QUALITY_RUNNER" = "uv" ]; then
+            uv run mypy . --ignore-missing-imports
+          else
+            mypy . --ignore-missing-imports
+          fi
         continue-on-error: true
 
       - name: pytest + coverage
         run: |
-          uv run pytest \
+          if [ "$PYTHON_QUALITY_RUNNER" = "uv" ]; then
+            RUNNER="uv run"
+          else
+            RUNNER=""
+          fi
+          $RUNNER pytest \
             --cov=src \
             --cov-report=xml \
             --cov-report=term-missing \
