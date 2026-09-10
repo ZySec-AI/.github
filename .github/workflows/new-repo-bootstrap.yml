@@ -79,7 +79,6 @@ jobs:
             "required_status_checks": {
               "strict": true,
               "contexts": [
-                "branch-checks / Branch name + merge flow",
                 "validate / Validate PR metadata",
                 "gates / Quality Gate",
                 "scan / Secret Scan (gitleaks)"
@@ -110,7 +109,6 @@ jobs:
             "required_status_checks": {
               "strict": true,
               "contexts": [
-                "branch-checks / Branch name + merge flow",
                 "validate / Validate PR metadata",
                 "gates / Quality Gate",
                 "scan / Secret Scan (gitleaks)",

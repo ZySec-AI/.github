@@ -43,9 +43,9 @@ branch_naming:
 # --- Required status checks --------------------------------------------------
 required_status_checks:
   develop:
-    - 'lint / Basic Check'              # lint only, <10s, no tests/build/scan
-    - 'branch-checks / Branch name + merge flow'
     - 'validate / Validate PR metadata'
+    - 'gates / Quality Gate'            # full suite: tests, coverage, build
+    - 'scan / Secret Scan (gitleaks)'
   stage:
     - 'gates / Quality Gate'            # full suite: tests, coverage, build
     - 'scan / Secret Scan (gitleaks)'
