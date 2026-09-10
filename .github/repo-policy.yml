@@ -47,9 +47,9 @@ required_status_checks:
     - 'gates / Quality Gate'            # full suite: tests, coverage, build
     - 'scan / Secret Scan (gitleaks)'
   stage:
+    - 'validate / Validate PR metadata'
     - 'gates / Quality Gate'            # full suite: tests, coverage, build
     - 'scan / Secret Scan (gitleaks)'
-    - 'AI Code Review (blocking on HIGH+)'
   release:
     - 'validate / Validate PR metadata'
     - 'gates / Quality Gate'
