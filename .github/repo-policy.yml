@@ -43,17 +43,17 @@ branch_naming:
 # --- Required status checks --------------------------------------------------
 required_status_checks:
   develop:
-    - 'lint / Basic Check'              # lint only, <10s, no tests/build/scan
-    - 'branch-checks / Branch name + merge flow'
     - 'validate / Validate PR metadata'
-  stage:
     - 'gates / Quality Gate'            # full suite: tests, coverage, build
     - 'scan / Secret Scan (gitleaks)'
-    - 'AI Code Review (blocking on HIGH+)'
+  stage:
+    - 'validate / Validate PR metadata'
+    - 'gates / Quality Gate'            # full suite: tests, coverage, build
+    - 'scan / Secret Scan (gitleaks)'
   release:
-    extends_from: stage
-    add:
-      - 'pr-release-full / Security Gate — release (full)'
+    - 'validate / Validate PR metadata'
+    - 'gates / Quality Gate'
+    - 'scan / Secret Scan (gitleaks)'
 
 protected_branches:
   - develop

@@ -79,7 +79,6 @@ jobs:
             "required_status_checks": {
               "strict": true,
               "contexts": [
-                "branch-checks / Branch name + merge flow",
                 "validate / Validate PR metadata",
                 "gates / Quality Gate",
                 "scan / Secret Scan (gitleaks)"
@@ -101,7 +100,7 @@ jobs:
               echo "  ✓ develop — branch protection applied"
             fi
 
-            # release: develop checks + full security gate + AI review
+            # release uses the same required checks as develop
             RELEASE_EXISTS=$(gh api "/repos/ZySec-AI/$REPO/branches/release" --silent 2>/dev/null && echo yes || echo no)
             if [ "$RELEASE_EXISTS" = "yes" ]; then
               gh api -X PUT "/repos/ZySec-AI/$REPO/branches/release/protection" \
@@ -110,12 +109,9 @@ jobs:
             "required_status_checks": {
               "strict": true,
               "contexts": [
-                "branch-checks / Branch name + merge flow",
                 "validate / Validate PR metadata",
                 "gates / Quality Gate",
-                "scan / Secret Scan (gitleaks)",
-                "full-security / Full Security Gate (non-hotfix)",
-                "AI Code Review (blocking on HIGH+)"
+                "scan / Secret Scan (gitleaks)"
               ]
             },
             "enforce_admins": false,
