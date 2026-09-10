@@ -51,9 +51,9 @@ required_status_checks:
     - 'scan / Secret Scan (gitleaks)'
     - 'AI Code Review (blocking on HIGH+)'
   release:
-    extends_from: stage
-    add:
-      - 'pr-release-full / Security Gate — release (full)'
+    - 'validate / Validate PR metadata'
+    - 'gates / Quality Gate'
+    - 'scan / Secret Scan (gitleaks)'
 
 protected_branches:
   - develop

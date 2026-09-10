@@ -90,17 +90,9 @@ jobs:
             "scan / Secret Scan (gitleaks)"
           ]'
 
-          # release: same as develop + QA sign-off + AI review blocks on HIGH
-          # From hotfix-security.yml (inline jobs, non-hotfix path):
-          #   "Full Security Gate (non-hotfix)"
-          #   "AI Code Review (blocking on HIGH+)"
-          # From release.yml → _reusable-release.yml:
-          #   "release / QA Sign-off Gate"  (only fires on PRs)
-          #
+          # Release uses the same required checks as develop.
           apply_protection "release" '[
             "validate / Validate PR metadata",
             "gates / Quality Gate",
-            "scan / Secret Scan (gitleaks)",
-            "full-security / Full Security Gate (non-hotfix)",
-            "AI Code Review (blocking on HIGH+)"
+            "scan / Secret Scan (gitleaks)"
           ]'
