@@ -28,6 +28,15 @@ on:
         description: 'Minimum line coverage % for Python, Node, and Rust quality jobs'
         type: number
         default: 85
+      python_cov_source:
+        description: >-
+          Source tree pytest-cov measures for the Python job (--cov=<value>).
+          Defaults to 'src' for src-layout repos; app-layout repos (e.g.
+          FastAPI services with code under app/) must pass their package dir,
+          otherwise coverage measures a nonexistent tree and reports ~0%
+          regardless of real coverage.
+        type: string
+        default: 'src'
       python_version:
         type: string
         default: '3.12'
@@ -115,7 +124,7 @@ jobs:
       - name: pytest + coverage
         run: |
           uv run pytest \
-            --cov=src \
+            --cov=${{ inputs.python_cov_source }} \
             --cov-report=xml \
             --cov-report=term-missing \
             --cov-fail-under=${{ inputs.coverage_threshold }} \
