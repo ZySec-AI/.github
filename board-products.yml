@@ -1,0 +1,62 @@
+# Repository -> board Product, for ZySec-AI Engineering Delivery (project 38).
+#
+# The single source of truth for the board's Product field. Both the scheduled
+# sweep (board-product-sync.yml) and the platform's backfill script read this
+# file, so there is no second copy to drift.
+#
+# Names must match a Product option on the board exactly. Option *ids* are never
+# written down anywhere: they are resolved live from the board by name, so
+# renaming a product is an edit here plus an edit on the board, and no code
+# change. Cyberpod was renamed to Autonous on 2026-09-11 and the old hardcoded
+# map named a product that no longer existed, in seven places.
+#
+# A repository absent from this file is skipped, never guessed. An item filed
+# under the wrong product is silently wrong; a blank one is visibly missing.
+#
+# Repositories on the board with no entry here are reported by every run. As of
+# 2026-09-11 that is 382 items across repos including open-copilot, openetl,
+# code-reviewer, CyberIntOps, deployments and project-zysec. They need product
+# decisions, not code.
+
+project: 38
+repositories:
+
+  # AgentSight
+  agentsight: AgentSight
+
+  # Autonous
+  app-store: Autonous
+  core-sdk: Autonous
+  coreiq: Autonous
+  cpod-arai: Autonous
+  cpod-backend: Autonous
+  cpod-sdk: Autonous
+  cpod-ui: Autonous
+
+  # C3
+  c3: C3
+
+  # Customer Ops
+  customerops: Customer Ops
+
+  # LeadtheAI
+  leadthe-ai: LeadtheAI
+
+  # ScaleRisk
+  scalerisk: ScaleRisk
+  scalerisk-ai: ScaleRisk
+
+  # ThreatMap
+  threatmap: ThreatMap
+
+  # Repositories that have left the organisation or been archived, but whose
+  # items remain on the board. All currently have Product set; they are mapped so
+  # a late-added item is not orphaned. cpod-* were Cyberpod, now Autonous.
+  archived-cpod-ui: Autonous
+  cpod-app-benchmarking: Autonous
+  cpod-apps: Autonous
+  cpod-apps-sdk: Autonous
+  cpod-core: Autonous
+  cpod-flows: Autonous
+  cyberpod-readiness: Autonous
+  relata: Relata DB
