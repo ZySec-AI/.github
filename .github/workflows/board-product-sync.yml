@@ -1,0 +1,59 @@
+# =============================================================================
+# WORKFLOW: Board Product Sync
+# PURPOSE:  Fill the Engineering Delivery board's `Product` field on items that
+#           have it blank, from board-products.yml.
+# TRIGGERS: schedule (every 30 min), workflow_dispatch
+# SECRETS:  ORG_ADMIN_TOKEN (project write needs more than github.token gives)
+#
+# WHY A SWEEP AND NOT AN `issues: opened` TRIGGER:
+#   Items reach this board on wildly different delays. Measured 2026-09-11:
+#   core-sdk#851 was added 2 seconds after the issue was created, c3#970 eleven
+#   hours later, and app-store#653 a day and a half later. Three auto-add rules
+#   are enabled plus manual adds. An issue-opened trigger would fire before the
+#   board item exists most of the time, and would miss transfers and re-adds
+#   entirely. A sweep is idempotent and catches all of it.
+#
+# WHY BLANKS ONLY:
+#   An item somebody set by hand is never overwritten. A repository absent from
+#   the manifest is skipped, not guessed - an item filed under the wrong product
+#   is silently wrong, while a blank one is visibly missing.
+# CONTACT:  platform-eng@zysec.ai
+# =============================================================================
+name: Board Product Sync
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write changes (unchecked = dry run)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: board-product-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Fill blank Product values
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Fill Product from the manifest
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          APPLY: ${{ github.event_name == 'schedule' && 'yes' || inputs.apply && 'yes' || 'no' }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::ORG_ADMIN_TOKEN is not set; project write needs it"
+            exit 1
+          fi
+          python3 scripts/board_product_sync.py ${{ env.APPLY == 'yes' && '--apply' || '' }} \
+            >> "$GITHUB_STEP_SUMMARY"
