@@ -214,10 +214,31 @@ jobs:
           VER=$(node -pe "require('./package.json').packageManager || ''" 2>/dev/null | sed 's/pnpm@//' | tr -d '\n')
           echo "version=${VER:-9}" >> $GITHUB_OUTPUT
 
+          # pnpm/action-setup installs into ~/setup-pnpm by default. On the
+          # self-hosted zysec-ai-ci pool $HOME is /home/github-runner, shared by
+          # every runner instance on the box, so concurrent jobs install into
+          # ONE directory and overwrite each other's pnpm binary. A job that
+          # correctly resolved 9.15.9 can have it swapped mid-run by a job
+          # installing a different version -- install succeeds, then a later
+          # step dies with:
+          #   ERR_PNPM_BAD_PM_VERSION  This project is configured to use
+          #   v9.15.9 of pnpm. Your current pnpm is v9.0.0
+          # (9.0.0 being what the ${VER:-9} fallback above resolves to for any
+          # repo with no packageManager field, which is how the wrong version
+          # gets into the shared directory in the first place.)
+          #
+          # $RUNNER_WORKSPACE/.. is this runner instance's own _work directory.
+          # A runner instance executes one job at a time, so a dest pinned there
+          # has no concurrent writer, and it persists between runs so the
+          # install stays warm. Mirrors the per-runner pnpm *store* fix already
+          # proven in ZySec-AI/cpod-ui .github/workflows/unit-test.yml.
+          echo "dest=$(cd "$RUNNER_WORKSPACE/.." && pwd)/.setup-pnpm" >> $GITHUB_OUTPUT
+
       - uses: pnpm/action-setup@v4
         if: steps.stack.outputs.pm == 'pnpm'
         with:
           version: ${{ steps.pnpm-ver.outputs.version }}
+          dest: ${{ steps.pnpm-ver.outputs.dest }}
 
       - name: Setup Node with package-manager cache
         if: steps.stack.outputs.lockfile == '1'
