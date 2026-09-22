@@ -214,31 +214,30 @@ jobs:
           VER=$(node -pe "require('./package.json').packageManager || ''" 2>/dev/null | sed 's/pnpm@//' | tr -d '\n')
           echo "version=${VER:-9}" >> $GITHUB_OUTPUT
 
-          # pnpm/action-setup installs into ~/setup-pnpm by default. On the
-          # self-hosted zysec-ai-ci pool $HOME is /home/github-runner, shared by
-          # every runner instance on the box, so concurrent jobs install into
-          # ONE directory and overwrite each other's pnpm binary. A job that
-          # correctly resolved 9.15.9 can have it swapped mid-run by a job
-          # installing a different version -- install succeeds, then a later
-          # step dies with:
-          #   ERR_PNPM_BAD_PM_VERSION  This project is configured to use
-          #   v9.15.9 of pnpm. Your current pnpm is v9.0.0
-          # (9.0.0 being what the ${VER:-9} fallback above resolves to for any
-          # repo with no packageManager field, which is how the wrong version
-          # gets into the shared directory in the first place.)
-          #
-          # $RUNNER_WORKSPACE/.. is this runner instance's own _work directory.
-          # A runner instance executes one job at a time, so a dest pinned there
-          # has no concurrent writer, and it persists between runs so the
-          # install stays warm. Mirrors the per-runner pnpm *store* fix already
-          # proven in ZySec-AI/cpod-ui .github/workflows/unit-test.yml.
-          echo "dest=$(cd "$RUNNER_WORKSPACE/.." && pwd)/.setup-pnpm" >> $GITHUB_OUTPUT
-
+      # dest is version-keyed on purpose. pnpm/action-setup defaults it to the
+      # single path ~/setup-pnpm, and on the self-hosted zysec-ai-ci pool $HOME
+      # is /home/github-runner -- shared by every runner instance on the box.
+      # Two concurrent jobs wanting different pnpm versions therefore install
+      # into ONE directory and overwrite each other's binary. The failure that
+      # causes is misleading, because version resolution is working correctly:
+      # a cpod-ui run requested 9.15.9, ran `pnpm install --frozen-lockfile`
+      # for 73s successfully, then failed the NEXT step 1s later with
+      #   ERR_PNPM_BAD_PM_VERSION  This project is configured to use v9.15.9
+      #   of pnpm. Your current pnpm is v9.0.0
+      # i.e. the binary was swapped mid-job. (9.0.0 is what the ${VER:-9}
+      # fallback above resolves to, so any repo with no packageManager field
+      # seeds the wrong version into the shared directory.)
+      #
+      # Keying the path by version means different versions can no longer
+      # collide, while jobs on the same version still share one install -- so
+      # this also costs less disk than giving each runner instance its own copy
+      # (pnpm unpacks to ~16.6 MB; one copy per version per box, not one per
+      # runner instance).
       - uses: pnpm/action-setup@v4
         if: steps.stack.outputs.pm == 'pnpm'
         with:
           version: ${{ steps.pnpm-ver.outputs.version }}
-          dest: ${{ steps.pnpm-ver.outputs.dest }}
+          dest: ~/setup-pnpm-${{ steps.pnpm-ver.outputs.version }}
 
       - name: Setup Node with package-manager cache
         if: steps.stack.outputs.lockfile == '1'
