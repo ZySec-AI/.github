@@ -115,6 +115,9 @@
 - name: "area:dx"
   color: "C5DEF5"
   description: "Developer experience and tooling"
+- name: "area:docs"
+  color: "C5DEF5"
+  description: "Documentation: ADRs, guides, READMEs and reference docs"
 
 # --- Architectural layer -----------------------------------------------------
 # Deliberately NOT part of area:*. `area:` is a functional axis (auth, ui,
