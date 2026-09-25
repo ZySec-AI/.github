@@ -94,10 +94,13 @@ jobs:
 
       - name: Configure git for private deps
         env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           HAS_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' }}
         if: env.HAS_TOKEN == 'true'
         run: |
-          git config --global --replace-all url."https://${{ secrets.ORG_ADMIN_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git config --global --replace-all \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
 
       - name: Install dependencies
         run: |
@@ -235,10 +238,24 @@ jobs:
       - name: Configure Git Authentication
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          HAS_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' }}
+        if: env.HAS_TOKEN == 'true'
         run: |
-          git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "git+ssh://git@github.com/"
-          git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-          git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global --replace-all \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
+          git config --global --add \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "git+https://github.com/"
+          git config --global --add \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "git+ssh://git@github.com/"
+          git config --global --add \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "git@github.com:"
+          git config --global --add \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "ssh://git@github.com/"
 
       - name: Install dependencies
         run: |
