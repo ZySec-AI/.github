@@ -52,7 +52,6 @@ jobs:
             ["check-license.yml"]="block GPL/AGPL/SSPL license text in diff"
             ["release.yml"]="QA gate + GitHub Release + Teams notification"
             ["code-review.yml"]="post-merge AI audit on develop"
-            ["code-review-pr.yml"]="AI PR review on develop PRs"
             ["issue-triage.yml"]="AI issue triage on opened/reopened"
             ["issue-auto-fix.yml"]="AI auto-fix on agent:ready-for-dev label"
             ["branch-flow-check.yml"]="branch naming + merge flow validation"
