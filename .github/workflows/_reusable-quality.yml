@@ -39,7 +39,9 @@ on:
         required: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # head_ref (PR) and ref_name (push) both resolve to the branch name, so a push to a
+  # branch that already has an open PR no longer runs every gate twice.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/release' }}
 
 jobs:
@@ -53,6 +55,29 @@ jobs:
       node: ${{ steps.detect.outputs.node }}
       rust: ${{ steps.detect.outputs.rust }}
     steps:
+      - name: Reclaim scratch space and report capacity
+        shell: bash
+        env:
+          DISK_MIN_GB: '25'
+        run: |
+          # Runner slots share one filesystem, so a job inherits whatever earlier jobs
+          # left behind. Drop stale build scratch from previous jobs on this slot --
+          # never the current workspace, and never anything still in use.
+          find "${RUNNER_WORKSPACE%/*}" -maxdepth 4 -type d -name 'llvm-cov-target' \
+            -not -path "${GITHUB_WORKSPACE}/*" -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+          find /tmp -maxdepth 1 -name 'rustc*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+
+          # WARN-ONLY on purpose: this rolls out to every repo at once, so it reports
+          # first and blocks later. Flip the warning below to `exit 1` once a few days of
+          # disk_check lines confirm 25G is the right threshold.
+          for fs in / "${TMPDIR:-/tmp}"; do
+            avail=$(df -BG --output=avail "$fs" 2>/dev/null | tail -1 | tr -dc '0-9')
+            [ -n "$avail" ] || continue
+            echo "disk_check fs=${fs} available_gb=${avail} threshold_gb=${DISK_MIN_GB} runner=${RUNNER_NAME:-unknown}"
+            if [ "$avail" -lt "$DISK_MIN_GB" ]; then
+              echo "::warning title=Low runner disk::${fs} has ${avail}G free (below ${DISK_MIN_GB}G) on ${RUNNER_NAME:-this runner}. Jobs on this slot may fail with 'No space left on device', \"Can't use 'tar -xzf' extract archive\", or spurious ENOENT during compilation."
+            fi
+          done
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -84,6 +109,29 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 15
     steps:
+      - name: Reclaim scratch space and report capacity
+        shell: bash
+        env:
+          DISK_MIN_GB: '25'
+        run: |
+          # Runner slots share one filesystem, so a job inherits whatever earlier jobs
+          # left behind. Drop stale build scratch from previous jobs on this slot --
+          # never the current workspace, and never anything still in use.
+          find "${RUNNER_WORKSPACE%/*}" -maxdepth 4 -type d -name 'llvm-cov-target' \
+            -not -path "${GITHUB_WORKSPACE}/*" -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+          find /tmp -maxdepth 1 -name 'rustc*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+
+          # WARN-ONLY on purpose: this rolls out to every repo at once, so it reports
+          # first and blocks later. Flip the warning below to `exit 1` once a few days of
+          # disk_check lines confirm 25G is the right threshold.
+          for fs in / "${TMPDIR:-/tmp}"; do
+            avail=$(df -BG --output=avail "$fs" 2>/dev/null | tail -1 | tr -dc '0-9')
+            [ -n "$avail" ] || continue
+            echo "disk_check fs=${fs} available_gb=${avail} threshold_gb=${DISK_MIN_GB} runner=${RUNNER_NAME:-unknown}"
+            if [ "$avail" -lt "$DISK_MIN_GB" ]; then
+              echo "::warning title=Low runner disk::${fs} has ${avail}G free (below ${DISK_MIN_GB}G) on ${RUNNER_NAME:-this runner}. Jobs on this slot may fail with 'No space left on device', \"Can't use 'tar -xzf' extract archive\", or spurious ENOENT during compilation."
+            fi
+          done
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v4
@@ -182,6 +230,29 @@ jobs:
       API_URL: http://localhost:8001
       NEXT_TELEMETRY_DISABLED: 1
     steps:
+      - name: Reclaim scratch space and report capacity
+        shell: bash
+        env:
+          DISK_MIN_GB: '25'
+        run: |
+          # Runner slots share one filesystem, so a job inherits whatever earlier jobs
+          # left behind. Drop stale build scratch from previous jobs on this slot --
+          # never the current workspace, and never anything still in use.
+          find "${RUNNER_WORKSPACE%/*}" -maxdepth 4 -type d -name 'llvm-cov-target' \
+            -not -path "${GITHUB_WORKSPACE}/*" -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+          find /tmp -maxdepth 1 -name 'rustc*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+
+          # WARN-ONLY on purpose: this rolls out to every repo at once, so it reports
+          # first and blocks later. Flip the warning below to `exit 1` once a few days of
+          # disk_check lines confirm 25G is the right threshold.
+          for fs in / "${TMPDIR:-/tmp}"; do
+            avail=$(df -BG --output=avail "$fs" 2>/dev/null | tail -1 | tr -dc '0-9')
+            [ -n "$avail" ] || continue
+            echo "disk_check fs=${fs} available_gb=${avail} threshold_gb=${DISK_MIN_GB} runner=${RUNNER_NAME:-unknown}"
+            if [ "$avail" -lt "$DISK_MIN_GB" ]; then
+              echo "::warning title=Low runner disk::${fs} has ${avail}G free (below ${DISK_MIN_GB}G) on ${RUNNER_NAME:-this runner}. Jobs on this slot may fail with 'No space left on device', \"Can't use 'tar -xzf' extract archive\", or spurious ENOENT during compilation."
+            fi
+          done
       - uses: actions/checkout@v4
 
       - name: Detect stack (Next.js, Prisma, package manager)
@@ -407,6 +478,29 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 30
     steps:
+      - name: Reclaim scratch space and report capacity
+        shell: bash
+        env:
+          DISK_MIN_GB: '25'
+        run: |
+          # Runner slots share one filesystem, so a job inherits whatever earlier jobs
+          # left behind. Drop stale build scratch from previous jobs on this slot --
+          # never the current workspace, and never anything still in use.
+          find "${RUNNER_WORKSPACE%/*}" -maxdepth 4 -type d -name 'llvm-cov-target' \
+            -not -path "${GITHUB_WORKSPACE}/*" -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+          find /tmp -maxdepth 1 -name 'rustc*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+
+          # WARN-ONLY on purpose: this rolls out to every repo at once, so it reports
+          # first and blocks later. Flip the warning below to `exit 1` once a few days of
+          # disk_check lines confirm 25G is the right threshold.
+          for fs in / "${TMPDIR:-/tmp}"; do
+            avail=$(df -BG --output=avail "$fs" 2>/dev/null | tail -1 | tr -dc '0-9')
+            [ -n "$avail" ] || continue
+            echo "disk_check fs=${fs} available_gb=${avail} threshold_gb=${DISK_MIN_GB} runner=${RUNNER_NAME:-unknown}"
+            if [ "$avail" -lt "$DISK_MIN_GB" ]; then
+              echo "::warning title=Low runner disk::${fs} has ${avail}G free (below ${DISK_MIN_GB}G) on ${RUNNER_NAME:-this runner}. Jobs on this slot may fail with 'No space left on device', \"Can't use 'tar -xzf' extract archive\", or spurious ENOENT during compilation."
+            fi
+          done
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
@@ -474,6 +568,29 @@ jobs:
     needs: [detect, python-quality, node-quality, rust-quality]
     if: always()
     steps:
+      - name: Reclaim scratch space and report capacity
+        shell: bash
+        env:
+          DISK_MIN_GB: '25'
+        run: |
+          # Runner slots share one filesystem, so a job inherits whatever earlier jobs
+          # left behind. Drop stale build scratch from previous jobs on this slot --
+          # never the current workspace, and never anything still in use.
+          find "${RUNNER_WORKSPACE%/*}" -maxdepth 4 -type d -name 'llvm-cov-target' \
+            -not -path "${GITHUB_WORKSPACE}/*" -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+          find /tmp -maxdepth 1 -name 'rustc*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+
+          # WARN-ONLY on purpose: this rolls out to every repo at once, so it reports
+          # first and blocks later. Flip the warning below to `exit 1` once a few days of
+          # disk_check lines confirm 25G is the right threshold.
+          for fs in / "${TMPDIR:-/tmp}"; do
+            avail=$(df -BG --output=avail "$fs" 2>/dev/null | tail -1 | tr -dc '0-9')
+            [ -n "$avail" ] || continue
+            echo "disk_check fs=${fs} available_gb=${avail} threshold_gb=${DISK_MIN_GB} runner=${RUNNER_NAME:-unknown}"
+            if [ "$avail" -lt "$DISK_MIN_GB" ]; then
+              echo "::warning title=Low runner disk::${fs} has ${avail}G free (below ${DISK_MIN_GB}G) on ${RUNNER_NAME:-this runner}. Jobs on this slot may fail with 'No space left on device', \"Can't use 'tar -xzf' extract archive\", or spurious ENOENT during compilation."
+            fi
+          done
       - name: Evaluate gates
         run: |
           if [ "${{ inputs.auto_detect }}" = "true" ]; then
