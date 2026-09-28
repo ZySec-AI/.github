@@ -105,7 +105,6 @@ jobs:
             check-license.yml
             release.yml
             code-review.yml
-            code-review-pr.yml
             issue-triage.yml
             issue-auto-fix.yml
             branch-flow-check.yml
@@ -143,6 +142,13 @@ jobs:
             fi
           fi
 
+          # Code Review (PR) is retired organization-wide. Existing
+          # repositories need an explicit deletion during this sync.
+          if [ -f "target/.github/workflows/code-review-pr.yml" ]; then
+            echo "DRIFT detected in retired code-review-pr.yml"
+            DRIFT=true
+          fi
+
           echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
 
       - name: Apply workflow sync
@@ -162,7 +168,6 @@ jobs:
             check-license.yml
             release.yml
             code-review.yml
-            code-review-pr.yml
             issue-triage.yml
             issue-auto-fix.yml
             branch-flow-check.yml
@@ -180,9 +185,12 @@ jobs:
             [ -f "$TEMPLATE_PATH" ] && [ -f "$TARGET_PATH" ] && cp "$TEMPLATE_PATH" "$TARGET_PATH"
           done
 
-          # Migrate only for an explicit manual direct-sync run. Keeping this
-          # out of normal PR syncs prevents an ordinary template update from
-          # deleting a workflow in every repository.
+          # Code Review (PR) is retired organization-wide. Remove the old
+          # caller from repositories that still have it during sync.
+          rm -f .github/workflows/code-review-pr.yml
+
+          # The security workflow migration remains limited to explicit direct
+          # syncs; retired Code Review (PR) is removed in every sync mode.
           if [ "$AUTO_MERGE" = "true" ]; then
             mkdir -p .github/workflows
             cp ../templates/workflow-templates/security-scan.yml .github/workflows/security-scan.yml
