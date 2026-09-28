@@ -178,7 +178,7 @@ jobs:
               BODY="$BODY  - package-ecosystem: \"$E\"\n    directory: \"/\"\n    schedule:\n      interval: \"weekly\"\n      day: \"friday\"\n      time: \"17:30\"\n      timezone: \"UTC\"\n    open-pull-requests-limit: 10\n    labels: [\"dependencies\"]\n    commit-message:\n      prefix: \"deps\"\n    groups:\n      minor-and-patch:\n        update-types:\n          - \"minor\"\n          - \"patch\"\n    reviewers:\n      - \"ZySec-AI/org-maintenance\"\n\n"
             done
             # github-actions applies to every repository that has workflows.
-            BODY="$BODY  - package-ecosystem: \"github-actions\"\n    directory: \".github/workflows\"\n    schedule:\n      interval: \"weekly\"\n      day: \"friday\"\n      time: \"17:30\"\n      timezone: \"UTC\"\n    open-pull-requests-limit: 5\n    labels: [\"dependencies\"]\n    commit-message:\n      prefix: \"ci\"\n    groups:\n      actions:\n        update-types:\n          - \"minor\"\n          - \"patch\"\n"
+            BODY="$BODY  - package-ecosystem: \"github-actions\"\n    directory: \".github/workflows\"\n    schedule:\n      interval: \"weekly\"\n      day: \"friday\"\n      time: \"17:30\"\n      timezone: \"UTC\"\n    open-pull-requests-limit: 5\n    labels: [\"dependencies\"]\n    commit-message:\n      prefix: \"ci\"\n    groups:\n      all-actions:\n        patterns:\n          - \"*\"\n"
 
             local ENCODED
             ENCODED=$(printf '%b' "$BODY" | base64 -w0)
