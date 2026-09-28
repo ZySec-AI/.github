@@ -4,8 +4,8 @@ updates:
     directory: ".github/workflows"
     schedule:
       interval: "weekly"
-      day: "monday"
-      time: "03:00"
+      day: "friday"
+      time: "17:30"
       timezone: "UTC"
     open-pull-requests-limit: 5
     # `dependencies` is in the org taxonomy (labels.yml), so it survives
