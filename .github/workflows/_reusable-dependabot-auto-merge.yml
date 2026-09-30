@@ -18,6 +18,12 @@ name: Reusable — Dependabot Auto-Merge
 on:
   workflow_call:
 
+# PR-only reusable workflow — a Dependabot rebase supersedes the run already
+# in flight for the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: write
   contents: write
@@ -26,7 +32,7 @@ jobs:
   auto-merge:
     name: Auto-merge Dependabot PRs
     if: github.actor == 'dependabot[bot]'
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Fetch Dependabot metadata

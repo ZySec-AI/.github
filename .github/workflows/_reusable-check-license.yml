@@ -3,14 +3,13 @@ name: check license (reusable)
 on:
   workflow_call:
     inputs:
-      # Runner labels, as a JSON array string. Defaults to the org's self-hosted
-      # CI pool, so every private repository that calls this is unaffected.
-      #
-      # Callers default to the organization self-hosted CI runner pool.
+      # Runner labels, as a JSON array string. This check is bot/metadata work
+      # that needs no build toolchain, so it defaults to GitHub-hosted runners
+      # and leaves the self-hosted CI pool for builds and tests.
       runs_on:
         type: string
         required: false
-        default: '["self-hosted","linux","x64","zysec-ai-ci"]'
+        default: '["ubuntu-latest"]'
 
 # PR-only reusable workflow (reads github.event.pull_request.*) — a new
 # commit supersedes whatever check is already running for the same PR.
