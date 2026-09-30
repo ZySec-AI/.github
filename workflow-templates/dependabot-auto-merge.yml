@@ -11,5 +11,6 @@ permissions:
 
 jobs:
   auto-merge:
+    if: github.actor == 'dependabot[bot]'
     uses: ZySec-AI/.github/.github/workflows/_reusable-dependabot-auto-merge.yml@develop
     secrets: inherit

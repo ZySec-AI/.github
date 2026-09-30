@@ -20,5 +20,6 @@ jobs:
       LLM_MODEL: ${{ secrets.LLM_MODEL }}
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     with:
+      runs_on: '["ubuntu-latest"]'
       mode: issue-fix
       fail_on: NEVER

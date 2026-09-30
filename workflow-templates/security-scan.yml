@@ -2,6 +2,7 @@ name: Security Scan
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [develop, stage, release]
   workflow_dispatch:
 
@@ -15,6 +16,8 @@ permissions:
 # including Gitleaks, lives in _reusable-security.yml.
 jobs:
   scan:
+    # Draft PRs do not occupy the CI pool; ready_for_review starts them.
+    if: ${{ !github.event.pull_request.draft }}
     uses: ZySec-AI/.github/.github/workflows/_reusable-security.yml@develop
     with:
       runs_on: '["self-hosted","linux","x64","zysec-ai-ci"]'

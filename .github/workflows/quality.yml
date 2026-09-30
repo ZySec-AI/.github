@@ -2,6 +2,7 @@ name: Quality Gates
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [develop, stage, release]
   workflow_dispatch:
 
@@ -10,6 +11,8 @@ permissions:
 
 jobs:
   gates:
+    # Draft PRs do not occupy the CI pool; ready_for_review starts them.
+    if: ${{ !github.event.pull_request.draft }}
     uses: ZySec-AI/.github/.github/workflows/_reusable-quality.yml@develop
     secrets: inherit
     with:
