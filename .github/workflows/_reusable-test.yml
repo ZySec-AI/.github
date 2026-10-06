@@ -16,7 +16,7 @@ on:
       unit_test_path:
         description: "Path to unit tests"
         required: false
-        default: "tests/unit-test"
+        default: "tests/unit"
         type: string
 
       e2e_test_path:
@@ -264,48 +264,85 @@ jobs:
           ) &&
           steps.check-unit-tests.outputs.present == 'true'
         shell: bash
+        env:
+          UNIT_PATH: ${{ inputs.unit_test_path }}
+          ROOT_PM: ${{ steps.package-manager.outputs.pm }}
         run: |
           set -euo pipefail
 
-          UNIT_PATH="${{ inputs.unit_test_path }}"
-
-          cd "$UNIT_PATH"
-
-          if [ -f package.json ]; then
-
+          detect_pm() {
             if [ -f pnpm-lock.yaml ]; then
-              PM="pnpm"
-
+              echo pnpm
             elif [ -f yarn.lock ]; then
-              PM="yarn"
-
+              echo yarn
             elif [ -f package-lock.json ]; then
-              PM="npm"
+              echo npm
+            fi
+          }
 
-            else
-              echo "::error::Node unit tests require a lockfile."
+          ROOT_DIR="${GITHUB_WORKSPACE:-$PWD}"
+
+          if [ -f "$UNIT_PATH/package.json" ]; then
+            cd "$UNIT_PATH"
+            PM="$(detect_pm || true)"
+
+            if [ -z "$PM" ]; then
+              echo "::error::Node unit tests require a lockfile in $UNIT_PATH."
               echo "::error::Expected pnpm-lock.yaml, yarn.lock, or package-lock.json."
               exit 1
             fi
 
             echo "type=node" >> "$GITHUB_OUTPUT"
             echo "pm=$PM" >> "$GITHUB_OUTPUT"
-
+            echo "location=nested" >> "$GITHUB_OUTPUT"
             echo "Unit-test type: Node"
             echo "Unit-test package manager: $PM"
+            echo "Detected package.json: $UNIT_PATH/package.json"
 
-          elif [ -f pytest.ini ] || \
-               [ -f pyproject.toml ] || \
-               [ -f requirements.txt ]; then
+          elif [ -f "$UNIT_PATH/pytest.ini" ] || \
+               [ -f "$UNIT_PATH/pyproject.toml" ] || \
+               [ -f "$UNIT_PATH/requirements.txt" ]; then
 
             echo "type=python" >> "$GITHUB_OUTPUT"
             echo "pm=python" >> "$GITHUB_OUTPUT"
-
+            echo "location=nested" >> "$GITHUB_OUTPUT"
             echo "Unit-test type: Python"
+            echo "Unit-test location: $UNIT_PATH"
+
+          elif [ -f "$ROOT_DIR/package.json" ]; then
+            PM="${ROOT_PM:-}"
+            if [ -z "$PM" ]; then
+              cd "$ROOT_DIR"
+              PM="$(detect_pm || true)"
+            fi
+
+            if [ -z "$PM" ]; then
+              echo "::error::package.json exists but no lockfile was found."
+              echo "::error::Expected pnpm-lock.yaml, yarn.lock, or package-lock.json."
+              exit 1
+            fi
+
+            echo "type=node" >> "$GITHUB_OUTPUT"
+            echo "pm=$PM" >> "$GITHUB_OUTPUT"
+            echo "location=root" >> "$GITHUB_OUTPUT"
+            echo "Unit-test type: Node"
+            echo "Unit-test package manager: $PM"
+            echo "Detected package.json: $ROOT_DIR/package.json"
+            echo "Test cases: $UNIT_PATH"
+
+          elif [ -f "$ROOT_DIR/pytest.ini" ] || \
+               [ -f "$ROOT_DIR/pyproject.toml" ] || \
+               [ -f "$ROOT_DIR/requirements.txt" ]; then
+
+            echo "type=python" >> "$GITHUB_OUTPUT"
+            echo "pm=python" >> "$GITHUB_OUTPUT"
+            echo "location=root" >> "$GITHUB_OUTPUT"
+            echo "Unit-test type: Python"
+            echo "Test cases: $UNIT_PATH"
 
           else
             echo "::error::Unable to detect unit-test runner."
-            echo "::error::Expected package.json, pytest.ini, pyproject.toml, or requirements.txt."
+            echo "::error::$UNIT_PATH has test files only, and $ROOT_DIR/package.json was not found."
             exit 1
           fi
 
@@ -316,7 +353,8 @@ jobs:
       - name: Detect unit-test pnpm version
         if: |
           steps.unit-package-manager.outputs.type == 'node' &&
-          steps.unit-package-manager.outputs.pm == 'pnpm'
+          steps.unit-package-manager.outputs.pm == 'pnpm' &&
+          steps.unit-package-manager.outputs.location == 'nested'
         id: unit-pnpm-version
         shell: bash
         run: |
@@ -351,7 +389,8 @@ jobs:
       - name: Setup unit-test pnpm
         if: |
           steps.unit-package-manager.outputs.type == 'node' &&
-          steps.unit-package-manager.outputs.pm == 'pnpm'
+          steps.unit-package-manager.outputs.pm == 'pnpm' &&
+          steps.unit-package-manager.outputs.location == 'nested'
         uses: pnpm/action-setup@v4
         with:
           version: ${{ steps.unit-pnpm-version.outputs.version }}
@@ -363,7 +402,8 @@ jobs:
       - name: Enable unit-test Yarn
         if: |
           steps.unit-package-manager.outputs.type == 'node' &&
-          steps.unit-package-manager.outputs.pm == 'yarn'
+          steps.unit-package-manager.outputs.pm == 'yarn' &&
+          steps.unit-package-manager.outputs.location == 'nested'
         shell: bash
         run: |
           set -euo pipefail
@@ -453,14 +493,17 @@ jobs:
       - name: Install Python unit-test dependencies
         if: steps.python-tests.outputs.present == 'true'
         shell: bash
+        env:
+          UNIT_PATH: ${{ inputs.unit_test_path }}
+          UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
         run: |
           set -euo pipefail
 
-          UNIT_PATH="${{ inputs.unit_test_path }}"
-
           python -m pip install --upgrade pip
 
-          cd "$UNIT_PATH"
+          if [ "$UNIT_LOCATION" = "nested" ]; then
+            cd "$UNIT_PATH"
+          fi
 
           if [ -f requirements.txt ]; then
 
@@ -494,7 +537,9 @@ jobs:
       # ============================================================
 
       - name: Install Node unit-test dependencies
-        if: steps.unit-package-manager.outputs.type == 'node'
+        if: |
+          steps.unit-package-manager.outputs.type == 'node' &&
+          steps.unit-package-manager.outputs.location == 'nested'
         env:
           GIT_CONFIG_COUNT: ${{ secrets.ORG_ADMIN_TOKEN != '' && '1' || '0' }}
           GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.ORG_ADMIN_TOKEN }}@github.com/.insteadOf
@@ -659,12 +704,15 @@ jobs:
           always() &&
           steps.unit-package-manager.outputs.type == 'node'
         shell: bash
+        env:
+          UNIT_PATH: ${{ inputs.unit_test_path }}
+          UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
         run: |
           set -euo pipefail
 
-          UNIT_PATH="${{ inputs.unit_test_path }}"
-
-          cd "$UNIT_PATH"
+          if [ "$UNIT_LOCATION" = "nested" ]; then
+            cd "$UNIT_PATH"
+          fi
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
 
@@ -702,14 +750,18 @@ jobs:
           always() &&
           steps.unit-package-manager.outputs.type == 'python'
         shell: bash
+        env:
+          UNIT_PATH: ${{ inputs.unit_test_path }}
+          UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
         run: |
           set -euo pipefail
 
-          UNIT_PATH="${{ inputs.unit_test_path }}"
-
-          cd "$UNIT_PATH"
-
-          python -m pytest .
+          if [ "$UNIT_LOCATION" = "nested" ]; then
+            cd "$UNIT_PATH"
+            python -m pytest .
+          else
+            python -m pytest "$UNIT_PATH"
+          fi
 
       # ============================================================
       # FINAL QUALITY GATE
