@@ -43,9 +43,107 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/release' }}
 
 jobs:
+  # ============================================================
+  # DETERMINE TEST MODE
+  #
+  # develop -> unit
+  # stage   -> playwright
+  # release -> both
+  #
+  # Manual dispatch -> both
+  # ============================================================
+
+  test-mode:
+    name: Determine test mode
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 5
+
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+      run_unit: ${{ steps.mode.outputs.run_unit }}
+      run_playwright: ${{ steps.mode.outputs.run_playwright }}
+
+    steps:
+      - name: Determine mode from branch
+        id: mode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="both"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            case "${{ github.base_ref }}" in
+              develop)
+                MODE="unit"
+                ;;
+              stage)
+                MODE="playwright"
+                ;;
+              release)
+                MODE="both"
+                ;;
+              *)
+                MODE="unit"
+                ;;
+            esac
+          else
+            case "${{ github.ref_name }}" in
+              develop)
+                MODE="unit"
+                ;;
+              stage)
+                MODE="playwright"
+                ;;
+              release)
+                MODE="both"
+                ;;
+              *)
+                MODE="unit"
+                ;;
+            esac
+          fi
+
+          case "$MODE" in
+            unit)
+              RUN_UNIT="true"
+              RUN_PLAYWRIGHT="false"
+              ;;
+            playwright)
+              RUN_UNIT="false"
+              RUN_PLAYWRIGHT="true"
+              ;;
+            both)
+              RUN_UNIT="true"
+              RUN_PLAYWRIGHT="true"
+              ;;
+            *)
+              echo "::error::Unknown test mode: $MODE"
+              exit 1
+              ;;
+          esac
+
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "run_unit=$RUN_UNIT" >> "$GITHUB_OUTPUT"
+          echo "run_playwright=$RUN_PLAYWRIGHT" >> "$GITHUB_OUTPUT"
+
+          echo "========================================"
+          echo "Quality Gate Test Mode"
+          echo "Event:             ${{ github.event_name }}"
+          echo "Branch:            ${{ github.ref_name }}"
+          echo "PR target:         ${{ github.base_ref }}"
+          echo "Mode:              $MODE"
+          echo "Run Unit:          $RUN_UNIT"
+          echo "Run Playwright:    $RUN_PLAYWRIGHT"
+          echo "========================================"
+
+  # ============================================================
+  # LANGUAGE DETECTION
+  # ============================================================
   detect:
     name: Detect language stacks
-    if: inputs.auto_detect
+    needs: test-mode
+    if: needs.test-mode.outputs.run_unit == 'true' && inputs.auto_detect
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 5
     outputs:
@@ -57,6 +155,7 @@ jobs:
         with:
           fetch-depth: 1
       - id: detect
+        shell: bash
         run: |
           python=0
           for f in requirements.txt requirements-dev.txt requirements-prod.txt requirements-test.txt pyproject.toml setup.py; do
@@ -72,14 +171,32 @@ jobs:
             echo "node=0" >> "$GITHUB_OUTPUT"
           fi
           echo "rust=$([ -f Cargo.toml ] && echo 1 || echo 0)" >> "$GITHUB_OUTPUT"
+  # ============================================================
+  # PYTHON QUALITY
+  # Runs on:
+  #   develop
+  #   release
+  # Does NOT run on stage
+  # ============================================================
 
   python-quality:
     name: Python — lint / type / coverage
-    needs: detect
+    needs:
+      - test-mode
+      - detect
     if: |
-      always() && (
-        (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.python == '1') ||
-        (!inputs.auto_detect && inputs.python)
+      always() &&
+      needs.test-mode.outputs.run_unit == 'true' &&
+      (
+        (
+          inputs.auto_detect &&
+          needs.detect.result == 'success' &&
+          needs.detect.outputs.python == '1'
+        ) ||
+        (
+          !inputs.auto_detect &&
+          inputs.python
+        )
       )
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 15
@@ -164,14 +281,32 @@ jobs:
           name: coverage-report
           path: coverage.xml
           retention-days: 7
+  # ============================================================
+  # NODE / NEXT.JS QUALITY
+  # Runs on:
+  #   develop
+  #   release
+  # Does NOT run on stage
+  # ============================================================
 
   node-quality:
     name: Node / Next.js — lint / type / build / coverage
-    needs: detect
+    needs:
+      - test-mode
+      - detect
     if: |
-      always() && (
-        (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.node == '1') ||
-        (!inputs.auto_detect && inputs.node)
+      always() &&
+      needs.test-mode.outputs.run_unit == 'true' &&
+      (
+        (
+          inputs.auto_detect &&
+          needs.detect.result == 'success' &&
+          needs.detect.outputs.node == '1'
+        ) ||
+        (
+          !inputs.auto_detect &&
+          inputs.node
+        )
       )
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 30
@@ -186,6 +321,7 @@ jobs:
 
       - name: Detect stack (Next.js, Prisma, package manager)
         id: stack
+        shell: bash
         run: |
           nextjs=0
           prisma=0
@@ -215,7 +351,7 @@ jobs:
         if: steps.stack.outputs.pm == 'pnpm'
         run: |
           VER=$(node -pe "require('./package.json').packageManager || ''" 2>/dev/null | sed 's/pnpm@//' | tr -d '\n')
-          echo "version=${VER:-9}" >> $GITHUB_OUTPUT
+          echo "version=${VER:-9}" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v4
         if: steps.stack.outputs.pm == 'pnpm'
@@ -290,7 +426,7 @@ jobs:
         run: |
           PM="${{ steps.stack.outputs.pm }}"
           has() { node -e "const s=require('./package.json').scripts||{}; process.exit(s['$1']?0:1)"; }
-          run() {
+          run_script() {
             case "$PM" in
               pnpm) pnpm run "$1" ;;
               yarn) yarn "$1" ;;
@@ -304,8 +440,8 @@ jobs:
               npm) npx tsc --noEmit ;;
             esac
           }
-          if has type-check; then run type-check
-          elif has typecheck; then run typecheck
+          if has type-check; then  run_script type-check
+          elif has typecheck; then  run_script type-check
           else tsc
           fi
 
@@ -395,14 +531,32 @@ jobs:
             coverage/coverage-summary.json
           if-no-files-found: ignore
           retention-days: 7
+  # ============================================================
+  # RUST QUALITY
+  # Runs on:
+  #   develop
+  #   release
+  # Does NOT run on stage
+  # ============================================================
 
   rust-quality:
     name: Rust — fmt / clippy / test / coverage
-    needs: detect
+    needs:
+      - test-mode
+      - detect
     if: |
-      always() && (
-        (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.rust == '1') ||
-        (!inputs.auto_detect && inputs.rust)
+      always() &&
+      needs.test-mode.outputs.run_unit == 'true' &&
+      (
+        (
+          inputs.auto_detect &&
+          needs.detect.result == 'success' &&
+          needs.detect.outputs.rust == '1'
+        ) ||
+        (
+          !inputs.auto_detect &&
+          inputs.rust
+        )
       )
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 30
@@ -470,35 +624,241 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # ============================================================
+  # PLAYWRIGHT
+  #
+  # stage   -> Playwright
+  # release -> Playwright
+  # develop -> skipped
+  #
+  # This job expects Playwright to be defined in package.json
+  # and a playwright.config.* file at repository root.
+  # ============================================================
+
+  playwright:
+    name: Playwright
+
+    needs: test-mode
+
+    if: needs.test-mode.outputs.run_playwright == 'true'
+
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Playwright configuration
+        id: playwright-config
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CONFIG=""
+
+          for f in \
+            playwright.config.ts \
+            playwright.config.js \
+            playwright.config.mjs \
+            playwright.config.cjs
+          do
+            if [ -f "$f" ]; then
+              CONFIG="$f"
+              break
+            fi
+          done
+
+          if [ -z "$CONFIG" ]; then
+            echo "::error::No root-level Playwright configuration found."
+            echo "Expected one of:"
+            echo "  playwright.config.ts"
+            echo "  playwright.config.js"
+            echo "  playwright.config.mjs"
+            echo "  playwright.config.cjs"
+            exit 1
+          fi
+
+          echo "config=$CONFIG" >> "$GITHUB_OUTPUT"
+          echo "Playwright configuration: $CONFIG"
+
+      - name: Detect package manager
+        id: package-manager
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f pnpm-lock.yaml ]; then
+            echo "pm=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then
+            echo "pm=yarn" >> "$GITHUB_OUTPUT"
+          elif [ -f package-lock.json ]; then
+            echo "pm=npm" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No supported Node package lockfile found."
+            exit 1
+          fi
+
+      - name: Detect pnpm version
+        id: pnpm-ver
+        if: steps.package-manager.outputs.pm == 'pnpm'
+        shell: bash
+        run: |
+          VER=$(node -pe \
+            "require('./package.json').packageManager || ''" \
+            2>/dev/null |
+            sed 's/pnpm@//' |
+            tr -d '\n')
+
+          echo "version=${VER:-9}" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.package-manager.outputs.pm == 'pnpm'
+        with:
+          version: ${{ steps.pnpm-ver.outputs.version }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Configure Git Authentication
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          HAS_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' }}
+        if: env.HAS_TOKEN == 'true'
+        run: |
+          git config --global --replace-all \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
+
+          git config --global --add \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "git+https://github.com/"
+
+          git config --global --add \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "git+ssh://git@github.com/"
+
+          git config --global --add \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "git@github.com:"
+
+          git config --global --add \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "ssh://git@github.com/"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          case "${{ steps.package-manager.outputs.pm }}" in
+            pnpm)
+              pnpm install --frozen-lockfile
+              ;;
+            yarn)
+              yarn install --immutable
+              ;;
+            npm)
+              npm ci
+              ;;
+          esac
+
+      - name: Install Playwright OS dependencies
+        run: |
+          npx playwright install-deps chromium
+
+      - name: Install Playwright Chromium
+        run: |
+          npx playwright install chromium
+
+      - name: Run Playwright tests
+        shell: bash
+        run: |
+          npx playwright test \
+            -c "${{ steps.playwright-config.outputs.config }}"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ============================================================
+  # QUALITY GATE
+  # ============================================================
+
   quality-gate:
     name: Quality Gate
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 5
-    needs: [detect, python-quality, node-quality, rust-quality]
+    needs:
+      - test-mode
+      - detect
+      - python-quality
+      - node-quality
+      - rust-quality
+      - playwright
     if: always()
     steps:
       - name: Evaluate gates
+        shell: bash
         run: |
-          if [ "${{ inputs.auto_detect }}" = "true" ]; then
-            PY="${{ needs.detect.outputs.python }}"
-            ND="${{ needs.detect.outputs.node }}"
-            RS="${{ needs.detect.outputs.rust }}"
-          else
-            PY=$([ "${{ inputs.python }}" = "true" ] && echo 1 || echo 0)
-            ND=$([ "${{ inputs.node }}" = "true" ] && echo 1 || echo 0)
-            RS=$([ "${{ inputs.rust }}" = "true" ] && echo 1 || echo 0)
-          fi
-          if [ "$PY" != "1" ] && [ "$ND" != "1" ] && [ "$RS" != "1" ]; then
-            echo "No language stack detected — nothing to gate."
-            exit 0
-          fi
+          set -euo pipefail
+
+          MODE="${{ needs.test-mode.outputs.mode }}"
+
+          PY_RESULT="${{ needs.python-quality.result }}"
+          NODE_RESULT="${{ needs.node-quality.result }}"
+          RUST_RESULT="${{ needs.rust-quality.result }}"
+          PLAYWRIGHT_RESULT="${{ needs.playwright.result }}"
+
+          echo "========================================"
+          echo "Quality Gate"
+          echo "Mode:              $MODE"
+          echo "Python:            $PY_RESULT"
+          echo "Node:              $NODE_RESULT"
+          echo "Rust:              $RUST_RESULT"
+          echo "Playwright:        $PLAYWRIGHT_RESULT"
+          echo "========================================"
+
           FAILED=false
-          for result in \
-            "${{ needs.python-quality.result }}" \
-            "${{ needs.node-quality.result }}" \
-            "${{ needs.rust-quality.result }}"; do
-            [ "$result" == "failure" ] && FAILED=true
-          done
+
+          # ----------------------------------------------------
+          # Unit / language quality
+          # ----------------------------------------------------
+
+          if [ "$MODE" = "unit" ] || [ "$MODE" = "both" ]; then
+
+            for result in \
+              "$PY_RESULT" \
+              "$NODE_RESULT" \
+              "$RUST_RESULT"
+            do
+              if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+                FAILED=true
+              fi
+            done
+
+          fi
+
+          # ----------------------------------------------------
+          # Playwright
+          # ----------------------------------------------------
+
+          if [ "$MODE" = "playwright" ] || [ "$MODE" = "both" ]; then
+
+            if [ "$PLAYWRIGHT_RESULT" = "failure" ] || \
+               [ "$PLAYWRIGHT_RESULT" = "cancelled" ]
+            then
+              FAILED=true
+            fi
+
+          fi
           if $FAILED; then
             echo "One or more quality gates failed."
             exit 1
