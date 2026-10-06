@@ -1,0 +1,835 @@
+name: Reusable Tests
+
+on:
+  workflow_call:
+    inputs:
+      # Callers default to the organization self-hosted CI runner pool.
+      runs_on:
+        type: string
+        required: false
+        default: '["self-hosted","linux","x64","zysec-ai-ci"]'
+      test_mode:
+        description: "Tests to run: unit, playwright, or both"
+        required: true
+        type: string
+
+      unit_test_path:
+        description: "Path to unit tests"
+        required: false
+        default: "tests/unit-test"
+        type: string
+
+      e2e_test_path:
+        description: "Path to Playwright E2E tests"
+        required: false
+        default: "tests/e2e"
+        type: string
+
+      playwright_config:
+        description: "Playwright configuration file"
+        required: false
+        default: "playwright.config.ts"
+        type: string
+
+      node_version:
+        description: "Node.js version"
+        required: false
+        default: "20"
+        type: string
+
+      python_version:
+        description: "Python version"
+        required: false
+        default: "3.12"
+        type: string
+
+      playwright_browser:
+        description: "Playwright browser"
+        required: false
+        default: "chromium"
+        type: string
+
+      install_playwright_deps:
+        description: "Install Playwright OS dependencies"
+        required: false
+        default: true
+        type: boolean
+
+    secrets:
+      ORG_ADMIN_TOKEN:
+        description: "Token used for private Git dependencies"
+        required: false
+
+jobs:
+  quality-gates:
+    name: Quality Gates
+
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+
+    timeout-minutes: 45
+
+    steps:
+
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # ============================================================
+      # VALIDATE TEST MODE
+      # ============================================================
+
+      - name: Validate test mode
+        id: mode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MODE="${{ inputs.test_mode }}"
+
+          case "$MODE" in
+            unit|playwright|both)
+              ;;
+            *)
+              echo "::error::Invalid test mode: $MODE"
+              echo "::error::Expected: unit, playwright, or both."
+              exit 1
+              ;;
+          esac
+
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
+          echo "========================================"
+          echo "Test Configuration"
+          echo "Mode:                 $MODE"
+          echo "Unit test path:       ${{ inputs.unit_test_path }}"
+          echo "E2E test path:        ${{ inputs.e2e_test_path }}"
+          echo "Playwright config:    ${{ inputs.playwright_config }}"
+          echo "Node version:         ${{ inputs.node_version }}"
+          echo "Python version:       ${{ inputs.python_version }}"
+          echo "Playwright browser:   ${{ inputs.playwright_browser }}"
+          echo "========================================"
+
+      # ============================================================
+      # DETECT ROOT NODE PACKAGE MANAGER
+      #
+      # Required when either unit tests or Playwright are used.
+      # ============================================================
+
+      - name: Detect root Node package manager
+        id: package-manager
+        if: |
+          steps.mode.outputs.mode == 'unit' ||
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f pnpm-lock.yaml ]; then
+            PM="pnpm"
+
+          elif [ -f yarn.lock ]; then
+            PM="yarn"
+
+          elif [ -f package-lock.json ]; then
+            PM="npm"
+
+          elif [ -f package.json ]; then
+            echo "::error::package.json exists but no lockfile was found."
+            echo "::error::CI requires pnpm-lock.yaml, yarn.lock, or package-lock.json."
+            exit 1
+
+          else
+            echo "::error::No supported Node package configuration found."
+            exit 1
+          fi
+
+          echo "pm=$PM" >> "$GITHUB_OUTPUT"
+
+          echo "Detected root package manager: $PM"
+
+      # ============================================================
+      # SETUP NODE
+      # ============================================================
+
+      - name: Setup Node.js
+        if: |
+          steps.mode.outputs.mode == 'unit' ||
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      # ============================================================
+      # ENABLE COREPACK
+      #
+      # Required for pnpm/yarn.
+      # ============================================================
+
+      - name: Enable Corepack
+        if: |
+          steps.package-manager.outputs.pm == 'pnpm' ||
+          steps.package-manager.outputs.pm == 'yarn'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          corepack enable
+
+          echo "Corepack enabled."
+
+      # ============================================================
+      # DETECT ROOT PNPM VERSION
+      # ============================================================
+
+      - name: Detect root pnpm version
+        if: steps.package-manager.outputs.pm == 'pnpm'
+        id: pnpm-version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f package.json ]; then
+            echo "::error::package.json is required for pnpm."
+            exit 1
+          fi
+
+          VERSION="$(
+            node -pe '
+              const pkg = require("./package.json");
+              const value = pkg.packageManager || "";
+              value.startsWith("pnpm@") ? value.substring(5) : "";
+            '
+          )"
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::package.json must declare a pnpm version."
+            echo "::error::Example: \"packageManager\": \"pnpm@9.15.0\""
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Using root pnpm version: $VERSION"
+
+      # ============================================================
+      # SETUP ROOT PNPM
+      # ============================================================
+
+      - name: Setup root pnpm
+        if: steps.package-manager.outputs.pm == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.pnpm-version.outputs.version }}
+
+      # ============================================================
+      # CHECK UNIT TEST DIRECTORY
+      # ============================================================
+
+      - name: Check unit test directory
+        id: check-unit-tests
+        if: |
+          steps.mode.outputs.mode == 'unit' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UNIT_PATH="${{ inputs.unit_test_path }}"
+
+          if [ ! -d "$UNIT_PATH" ]; then
+            echo "::error::Required unit test directory '$UNIT_PATH' does not exist."
+            exit 1
+          fi
+
+          echo "Unit tests found under: $UNIT_PATH"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      # ============================================================
+      # DETECT UNIT TEST TYPE / PACKAGE MANAGER
+      # ============================================================
+
+      - name: Detect unit-test package manager
+        id: unit-package-manager
+        if: |
+          (
+            steps.mode.outputs.mode == 'unit' ||
+            steps.mode.outputs.mode == 'both'
+          ) &&
+          steps.check-unit-tests.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UNIT_PATH="${{ inputs.unit_test_path }}"
+
+          cd "$UNIT_PATH"
+
+          if [ -f package.json ]; then
+
+            if [ -f pnpm-lock.yaml ]; then
+              PM="pnpm"
+
+            elif [ -f yarn.lock ]; then
+              PM="yarn"
+
+            elif [ -f package-lock.json ]; then
+              PM="npm"
+
+            else
+              echo "::error::Node unit tests require a lockfile."
+              echo "::error::Expected pnpm-lock.yaml, yarn.lock, or package-lock.json."
+              exit 1
+            fi
+
+            echo "type=node" >> "$GITHUB_OUTPUT"
+            echo "pm=$PM" >> "$GITHUB_OUTPUT"
+
+            echo "Unit-test type: Node"
+            echo "Unit-test package manager: $PM"
+
+          elif [ -f pytest.ini ] || \
+               [ -f pyproject.toml ] || \
+               [ -f requirements.txt ]; then
+
+            echo "type=python" >> "$GITHUB_OUTPUT"
+            echo "pm=python" >> "$GITHUB_OUTPUT"
+
+            echo "Unit-test type: Python"
+
+          else
+            echo "::error::Unable to detect unit-test runner."
+            echo "::error::Expected package.json, pytest.ini, pyproject.toml, or requirements.txt."
+            exit 1
+          fi
+
+      # ============================================================
+      # DETECT UNIT PNPM VERSION
+      # ============================================================
+
+      - name: Detect unit-test pnpm version
+        if: |
+          steps.unit-package-manager.outputs.type == 'node' &&
+          steps.unit-package-manager.outputs.pm == 'pnpm'
+        id: unit-pnpm-version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UNIT_PATH="${{ inputs.unit_test_path }}"
+
+          cd "$UNIT_PATH"
+
+          VERSION="$(
+            node -pe '
+              const pkg = require("./package.json");
+              const value = pkg.packageManager || "";
+              value.startsWith("pnpm@") ? value.substring(5) : "";
+            '
+          )"
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Unit-test package.json must declare its pnpm version."
+            echo "::error::Example: \"packageManager\": \"pnpm@9.15.0\""
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Using unit-test pnpm version: $VERSION"
+
+      # ============================================================
+      # SETUP UNIT PNPM
+      # ============================================================
+
+      - name: Setup unit-test pnpm
+        if: |
+          steps.unit-package-manager.outputs.type == 'node' &&
+          steps.unit-package-manager.outputs.pm == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.unit-pnpm-version.outputs.version }}
+
+      # ============================================================
+      # ENABLE UNIT YARN
+      # ============================================================
+
+      - name: Enable unit-test Yarn
+        if: |
+          steps.unit-package-manager.outputs.type == 'node' &&
+          steps.unit-package-manager.outputs.pm == 'yarn'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          corepack enable
+
+          echo "Unit-test Yarn enabled."
+
+      # ============================================================
+      # DETECT PYTHON UNIT TESTS
+      # ============================================================
+
+      - name: Detect Python unit tests
+        id: python-tests
+        if: |
+          steps.unit-package-manager.outputs.type == 'python'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "present=true" >> "$GITHUB_OUTPUT"
+          echo "Python unit-test configuration detected."
+
+      # ============================================================
+      # SETUP PYTHON
+      # ============================================================
+
+      - name: Setup Python
+        if: steps.python-tests.outputs.present == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      # ============================================================
+      # INSTALL ROOT NODE DEPENDENCIES
+      #
+      # IMPORTANT:
+      # The Git token exists ONLY for this step.
+      #
+      # It is NOT present during:
+      #   npm test
+      #   pnpm test
+      #   yarn test
+      #   Playwright
+      # ============================================================
+
+      - name: Install root Node dependencies
+        if: |
+          steps.mode.outputs.mode == 'unit' ||
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        env:
+          GIT_CONFIG_COUNT: ${{ secrets.ORG_ADMIN_TOKEN != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.ORG_ADMIN_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ steps.package-manager.outputs.pm }}" in
+
+            pnpm)
+              pnpm install --frozen-lockfile
+              ;;
+
+            yarn)
+              yarn install --immutable
+              ;;
+
+            npm)
+              npm ci
+              ;;
+
+            *)
+              echo "::error::Unsupported package manager."
+              exit 1
+              ;;
+
+          esac
+
+      # ============================================================
+      # INSTALL PYTHON UNIT-TEST DEPENDENCIES
+      #
+      # pip install -e . is intentionally FATAL.
+      # ============================================================
+
+      - name: Install Python unit-test dependencies
+        if: steps.python-tests.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UNIT_PATH="${{ inputs.unit_test_path }}"
+
+          python -m pip install --upgrade pip
+
+          cd "$UNIT_PATH"
+
+          if [ -f requirements.txt ]; then
+
+            echo "Installing Python requirements.txt"
+
+            python -m pip install -r requirements.txt
+
+          elif [ -f pyproject.toml ]; then
+
+            echo "Installing Python project from pyproject.toml"
+
+            python -m pip install -e .
+
+          elif [ -f pytest.ini ]; then
+
+            echo "Installing pytest"
+
+            python -m pip install pytest
+
+          else
+
+            echo "::error::No supported Python dependency configuration found."
+            exit 1
+
+          fi
+
+      # ============================================================
+      # INSTALL NODE UNIT-TEST DEPENDENCIES
+      #
+      # Git token is available ONLY here.
+      # ============================================================
+
+      - name: Install Node unit-test dependencies
+        if: steps.unit-package-manager.outputs.type == 'node'
+        env:
+          GIT_CONFIG_COUNT: ${{ secrets.ORG_ADMIN_TOKEN != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.ORG_ADMIN_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UNIT_PATH="${{ inputs.unit_test_path }}"
+
+          cd "$UNIT_PATH"
+
+          case "${{ steps.unit-package-manager.outputs.pm }}" in
+
+            pnpm)
+              pnpm install --frozen-lockfile
+              ;;
+
+            yarn)
+              yarn install --immutable
+              ;;
+
+            npm)
+              npm ci
+              ;;
+
+            *)
+              echo "::error::Unsupported unit-test package manager."
+              exit 1
+              ;;
+
+          esac
+
+      # ============================================================
+      # VERIFY PLAYWRIGHT CONFIGURATION
+      # ============================================================
+
+      - name: Verify Playwright configuration
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CONFIG="${{ inputs.playwright_config }}"
+
+          if [ ! -f "$CONFIG" ]; then
+            echo "::error::Playwright configuration '$CONFIG' does not exist."
+            exit 1
+          fi
+
+          echo "Using Playwright configuration: $CONFIG"
+
+      # ============================================================
+      # VERIFY E2E TEST DIRECTORY
+      # ============================================================
+
+      - name: Verify E2E test directory
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          E2E_PATH="${{ inputs.e2e_test_path }}"
+
+          if [ ! -d "$E2E_PATH" ]; then
+            echo "::error::Playwright test directory '$E2E_PATH' does not exist."
+            exit 1
+          fi
+
+          echo "Playwright tests found under: $E2E_PATH"
+
+      # ============================================================
+      # INSTALL PLAYWRIGHT OS DEPENDENCIES
+      # ============================================================
+
+      - name: Install Playwright OS dependencies
+        if: |
+          inputs.install_playwright_deps == true &&
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npx playwright install-deps "${{ inputs.playwright_browser }}"
+
+      # ============================================================
+      # INSTALL PLAYWRIGHT BROWSER
+      # ============================================================
+
+      - name: Install Playwright browser
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npx playwright install "${{ inputs.playwright_browser }}"
+
+      # ============================================================
+      # RUN PLAYWRIGHT
+      #
+      # always() in "both" mode means unit tests still execute
+      # even if Playwright fails.
+      #
+      # No Git token is available here.
+      # ============================================================
+
+      - name: Run Playwright E2E tests
+        id: playwright-tests
+        if: |
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npx playwright test "${{ inputs.e2e_test_path }}"
+
+      # ============================================================
+      # UPLOAD PLAYWRIGHT REPORT
+      # ============================================================
+
+      - name: Upload Playwright report
+        if: |
+          always() &&
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # ============================================================
+      # RUN NODE UNIT TESTS
+      #
+      # always() ensures unit tests execute even when Playwright
+      # fails in "both" mode.
+      #
+      # No Git token is available here.
+      # ============================================================
+
+      - name: Run Node unit tests
+        id: node-unit-tests
+        if: |
+          always() &&
+          steps.unit-package-manager.outputs.type == 'node'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UNIT_PATH="${{ inputs.unit_test_path }}"
+
+          cd "$UNIT_PATH"
+
+          case "${{ steps.unit-package-manager.outputs.pm }}" in
+
+            pnpm)
+              pnpm test
+              ;;
+
+            yarn)
+              yarn test
+              ;;
+
+            npm)
+              npm test
+              ;;
+
+            *)
+              echo "::error::Unsupported unit-test package manager."
+              exit 1
+              ;;
+
+          esac
+
+      # ============================================================
+      # RUN PYTHON UNIT TESTS
+      #
+      # always() ensures unit tests execute even when Playwright
+      # fails in "both" mode.
+      #
+      # No Git token is available here.
+      # ============================================================
+
+      - name: Run Python unit tests
+        id: python-unit-tests
+        if: |
+          always() &&
+          steps.unit-package-manager.outputs.type == 'python'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UNIT_PATH="${{ inputs.unit_test_path }}"
+
+          cd "$UNIT_PATH"
+
+          python -m pytest .
+
+      # ============================================================
+      # FINAL QUALITY GATE
+      #
+      # "both" requires BOTH suites to pass.
+      #
+      # A failure in one suite does not prevent the other suite
+      # from executing.
+      # ============================================================
+
+      - name: Quality Gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MODE="${{ steps.mode.outputs.mode }}"
+
+          PLAYWRIGHT_RESULT="${{ steps.playwright-tests.outcome }}"
+          NODE_UNIT_RESULT="${{ steps.node-unit-tests.outcome }}"
+          PYTHON_UNIT_RESULT="${{ steps.python-unit-tests.outcome }}"
+          UNIT_TEST_TYPE="${{ steps.unit-package-manager.outputs.type }}"
+
+          PLAYWRIGHT_RESULT="${PLAYWRIGHT_RESULT:-not-run}"
+          NODE_UNIT_RESULT="${NODE_UNIT_RESULT:-not-run}"
+          PYTHON_UNIT_RESULT="${PYTHON_UNIT_RESULT:-not-run}"
+          UNIT_TEST_TYPE="${UNIT_TEST_TYPE:-not-detected}"
+
+          echo "========================================"
+          echo "Quality Gate Summary"
+          echo "Mode:               $MODE"
+          echo "Playwright result:  $PLAYWRIGHT_RESULT"
+          echo "Node unit result:   $NODE_UNIT_RESULT"
+          echo "Python unit result: $PYTHON_UNIT_RESULT"
+          echo "Unit test type:     $UNIT_TEST_TYPE"
+          echo "========================================"
+
+          case "$MODE" in
+
+            playwright)
+
+              if [ "$PLAYWRIGHT_RESULT" != "success" ]; then
+                echo "::error::Playwright quality gate failed."
+                exit 1
+              fi
+
+              ;;
+
+            unit)
+
+              case "$UNIT_TEST_TYPE" in
+
+                node)
+                  if [ "$NODE_UNIT_RESULT" != "success" ]; then
+                    echo "::error::Node unit test quality gate failed."
+                    exit 1
+                  fi
+                  ;;
+
+                python)
+                  if [ "$PYTHON_UNIT_RESULT" != "success" ]; then
+                    echo "::error::Python unit test quality gate failed."
+                    exit 1
+                  fi
+                  ;;
+
+                *)
+                  echo "::error::No valid unit-test runner was detected."
+                  exit 1
+                  ;;
+
+              esac
+
+              ;;
+
+            both)
+
+              GATE_FAILED=false
+
+              if [ "$PLAYWRIGHT_RESULT" != "success" ]; then
+                echo "::error::Playwright quality gate failed."
+                GATE_FAILED=true
+              fi
+
+              case "$UNIT_TEST_TYPE" in
+
+                node)
+                  if [ "$NODE_UNIT_RESULT" != "success" ]; then
+                    echo "::error::Node unit test quality gate failed."
+                    GATE_FAILED=true
+                  fi
+                  ;;
+
+                python)
+                  if [ "$PYTHON_UNIT_RESULT" != "success" ]; then
+                    echo "::error::Python unit test quality gate failed."
+                    GATE_FAILED=true
+                  fi
+                  ;;
+
+                *)
+                  echo "::error::No valid unit-test runner was detected."
+                  GATE_FAILED=true
+                  ;;
+
+              esac
+
+              if [ "$GATE_FAILED" = "true" ]; then
+                exit 1
+              fi
+
+              ;;
+
+            *)
+              echo "::error::Unknown quality gate mode: $MODE"
+              exit 1
+              ;;
+
+          esac
+
+          echo "========================================"
+          echo "Quality Gate PASSED"
+          echo "========================================"
