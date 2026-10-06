@@ -858,6 +858,68 @@ jobs:
           npx playwright test \
             -c "${{ inputs.playwright_config }}" \
             "${{ inputs.e2e_test_path }}"
+      
+            # ============================================================
+      # START RELATADB
+      #
+      # Playwright E2E global-setup requires a local RelataDB instance
+      # on localhost:9090.
+      # ============================================================
+
+      - name: Start RelataDB
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Starting RelataDB..."
+
+          docker compose up -d relatadb
+
+          echo "Waiting for RelataDB to become healthy..."
+
+          for i in {1..60}; do
+            if curl -fsS http://localhost:9090/health >/dev/null 2>&1; then
+              echo "RelataDB is ready."
+              exit 0
+            fi
+
+            echo "RelataDB not ready yet ($i/60)"
+            sleep 2
+          done
+
+          echo "::error::RelataDB did not become ready within 120 seconds."
+
+          echo "Docker Compose status:"
+          docker compose ps
+
+          echo "RelataDB logs:"
+          docker compose logs relatadb --tail=200 || true
+
+          exit 1
+
+      # ============================================================
+      # RUN PLAYWRIGHT
+      # ============================================================
+
+      - name: Run Playwright E2E tests
+        id: playwright-tests
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        env:
+          RELATADB_URL: http://localhost:9090
+          RELATADB_TOKEN: threatmap-default
+          RELATADB_REQUIRED: "1"
+        run: |
+          set -euo pipefail
+
+          npx playwright test \
+            -c "${{ inputs.playwright_config }}" \
+            "${{ inputs.e2e_test_path }}"
 
       # ============================================================
       # UPLOAD PLAYWRIGHT REPORT
