@@ -50,6 +50,12 @@ on:
         default: "chromium"
         type: string
 
+      install_playwright_deps:
+        description: "Install Playwright OS dependencies"
+        required: false
+        default: true
+        type: boolean
+
     secrets:
       ORG_ADMIN_TOKEN:
         description: "Token used for private Git dependencies"
@@ -111,6 +117,8 @@ jobs:
 
       # ============================================================
       # DETECT ROOT NODE PACKAGE MANAGER
+      #
+      # Required when either unit tests or Playwright are used.
       # ============================================================
 
       - name: Detect root Node package manager
@@ -677,18 +685,24 @@ jobs:
           echo "Playwright tests found under: $E2E_PATH"
 
       # ============================================================
-      # PLAYWRIGHT BROWSER INSTALLATION
-      #
-      # IMPORTANT:
-      # We intentionally DO NOT run:
-      #
-      #   npx playwright install-deps
-      #
-      # because the self-hosted runner requires sudo and does not
-      # have passwordless sudo configured.
-      #
-      # The Linux dependencies should be installed once when the
-      # self-hosted runner image/machine is provisioned.
+      # INSTALL PLAYWRIGHT OS DEPENDENCIES
+      # ============================================================
+
+      - name: Install Playwright OS dependencies
+        if: |
+          inputs.install_playwright_deps == true &&
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npx playwright install-deps "${{ inputs.playwright_browser }}"
+
+      # ============================================================
+      # INSTALL PLAYWRIGHT BROWSER
       # ============================================================
 
       - name: Install Playwright browser
@@ -699,38 +713,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Installing Playwright browser: ${{ inputs.playwright_browser }}"
-
           npx playwright install "${{ inputs.playwright_browser }}"
 
       # ============================================================
       # RUN PLAYWRIGHT
-      #
-      # In "both" mode, Playwright and unit tests should both run
-      # even if one of them fails.
       # ============================================================
 
       - name: Run Playwright E2E tests
         id: playwright-tests
         if: |
-          (
-            steps.mode.outputs.mode == 'playwright' ||
-            steps.mode.outputs.mode == 'both'
-          )
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "========================================"
-          echo "Running Playwright E2E tests"
-          echo "Test path: ${{ inputs.e2e_test_path }}"
-          echo "Config:     ${{ inputs.playwright_config }}"
-          echo "Browser:    ${{ inputs.playwright_browser }}"
-          echo "========================================"
-
-          npx playwright test \
-            "${{ inputs.e2e_test_path }}" \
-            --config="${{ inputs.playwright_config }}"
+          npx playwright test "${{ inputs.e2e_test_path }}"
 
       # ============================================================
       # UPLOAD PLAYWRIGHT REPORT
@@ -756,8 +754,7 @@ jobs:
       # ============================================================
       # RUN NODE UNIT TESTS
       #
-      # always() ensures unit tests execute even when Playwright
-      # fails in "both" mode.
+      # always() ensures unit tests still execute if Playwright fails.
       # ============================================================
 
       - name: Run Node unit tests
@@ -776,12 +773,9 @@ jobs:
             cd "$UNIT_PATH"
           fi
 
-          echo "========================================"
           echo "Running Node unit tests"
-          echo "Package manager: ${{ steps.unit-package-manager.outputs.pm }}"
-          echo "Location:        $UNIT_LOCATION"
-          echo "Test path:       $UNIT_PATH"
-          echo "========================================"
+          echo "Location: $UNIT_LOCATION"
+          echo "Path: ${UNIT_PATH}"
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
 
@@ -806,9 +800,6 @@ jobs:
 
       # ============================================================
       # RUN PYTHON UNIT TESTS
-      #
-      # always() ensures unit tests execute even when Playwright
-      # fails in "both" mode.
       # ============================================================
 
       - name: Run Python unit tests
@@ -823,12 +814,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "========================================"
-          echo "Running Python unit tests"
-          echo "Location:  $UNIT_LOCATION"
-          echo "Test path: $UNIT_PATH"
-          echo "========================================"
-
           if [ "$UNIT_LOCATION" = "nested" ]; then
             cd "$UNIT_PATH"
             python -m pytest .
@@ -838,15 +823,6 @@ jobs:
 
       # ============================================================
       # FINAL QUALITY GATE
-      #
-      # "playwright" requires Playwright to pass.
-      #
-      # "unit" requires the detected unit-test suite to pass.
-      #
-      # "both" requires BOTH suites to pass.
-      #
-      # A failure in one suite does not prevent the other suite
-      # from executing.
       # ============================================================
 
       - name: Quality Gate
@@ -878,10 +854,6 @@ jobs:
 
           case "$MODE" in
 
-            # ------------------------------------------------------
-            # PLAYWRIGHT ONLY
-            # ------------------------------------------------------
-
             playwright)
 
               if [ "$PLAYWRIGHT_RESULT" != "success" ]; then
@@ -891,46 +863,32 @@ jobs:
 
               ;;
 
-            # ------------------------------------------------------
-            # UNIT ONLY
-            # ------------------------------------------------------
-
             unit)
 
               case "$UNIT_TEST_TYPE" in
 
                 node)
-
                   if [ "$NODE_UNIT_RESULT" != "success" ]; then
                     echo "::error::Node unit test quality gate failed."
                     exit 1
                   fi
-
                   ;;
 
                 python)
-
                   if [ "$PYTHON_UNIT_RESULT" != "success" ]; then
                     echo "::error::Python unit test quality gate failed."
                     exit 1
                   fi
-
                   ;;
 
                 *)
-
                   echo "::error::No valid unit-test runner was detected."
                   exit 1
-
                   ;;
 
               esac
 
               ;;
-
-            # ------------------------------------------------------
-            # BOTH
-            # ------------------------------------------------------
 
             both)
 
@@ -944,50 +902,35 @@ jobs:
               case "$UNIT_TEST_TYPE" in
 
                 node)
-
                   if [ "$NODE_UNIT_RESULT" != "success" ]; then
                     echo "::error::Node unit test quality gate failed."
                     GATE_FAILED=true
                   fi
-
                   ;;
 
                 python)
-
                   if [ "$PYTHON_UNIT_RESULT" != "success" ]; then
                     echo "::error::Python unit test quality gate failed."
                     GATE_FAILED=true
                   fi
-
                   ;;
 
                 *)
-
                   echo "::error::No valid unit-test runner was detected."
                   GATE_FAILED=true
-
                   ;;
 
               esac
 
               if [ "$GATE_FAILED" = "true" ]; then
-                echo "========================================"
-                echo "Quality Gate FAILED"
-                echo "========================================"
                 exit 1
               fi
 
               ;;
 
-            # ------------------------------------------------------
-            # INVALID
-            # ------------------------------------------------------
-
             *)
-
               echo "::error::Unknown quality gate mode: $MODE"
               exit 1
-
               ;;
 
           esac
