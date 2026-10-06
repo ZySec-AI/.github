@@ -353,12 +353,6 @@ jobs:
 
           # ========================================================
           # ROOT NODE PROJECT
-          #
-          # Example:
-          #
-          # package.json
-          # pnpm-lock.yaml
-          # tests/unit/*.test.ts
           # ========================================================
 
           if [ -f "$ROOT_DIR/package.json" ]; then
@@ -686,6 +680,19 @@ jobs:
 
       # ============================================================
       # INSTALL PLAYWRIGHT OS DEPENDENCIES
+      #
+      # IMPORTANT:
+      # Do NOT use:
+      #
+      #   npx playwright install-deps chromium
+      #
+      # on the organization self-hosted runners.
+      #
+      # Playwright's install-deps internally invokes sudo in a way
+      # that requires an interactive password on these runners.
+      #
+      # Instead, install the required packages explicitly using the
+      # sudo apt-get pattern supported by the zysec-ai-ci runners.
       # ============================================================
 
       - name: Install Playwright OS dependencies
@@ -699,10 +706,128 @@ jobs:
         run: |
           set -euo pipefail
 
-          npx playwright install-deps "${{ inputs.playwright_browser }}"
+          . /etc/os-release
+
+          echo "Runner OS: $PRETTY_NAME"
+          echo "Playwright browser: ${{ inputs.playwright_browser }}"
+
+          case "${{ inputs.playwright_browser }}" in
+
+            chromium)
+
+              case "$VERSION_ID" in
+
+                24.04)
+                  packages="fonts-freefont-ttf fonts-ipafont-gothic fonts-liberation \
+                    fonts-noto-color-emoji fonts-tlwg-loma-otf fonts-unifont \
+                    fonts-wqy-zenhei libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 \
+                    libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 \
+                    libfontconfig1 libfreetype6 libgbm1 libglib2.0-0t64 libnspr4 libnss3 \
+                    libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 \
+                    libxext6 libxfixes3 libxkbcommon0 libxrandr2 xfonts-cyrillic \
+                    xfonts-scalable xvfb"
+                  ;;
+
+                22.04)
+                  packages="fonts-freefont-ttf fonts-ipafont-gothic fonts-liberation \
+                    fonts-noto-color-emoji fonts-tlwg-loma-otf fonts-unifont \
+                    fonts-wqy-zenhei libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+                    libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 \
+                    libfontconfig1 libfreetype6 libgbm1 libglib2.0-0 libnspr4 libnss3 \
+                    libpango-1.0-0 libwayland-client0 libx11-6 libxcb1 \
+                    libxcomposite1 libxdamage1 libxext6 libxfixes3 \
+                    libxkbcommon0 libxrandr2 xfonts-cyrillic \
+                    xfonts-scalable xvfb"
+                  ;;
+
+                *)
+                  echo "::error::No Playwright dependency list for $PRETTY_NAME."
+                  echo "::error::Add a dependency list generated from:"
+                  echo "::error::npx playwright install-deps --dry-run chromium"
+                  exit 1
+                  ;;
+
+              esac
+              ;;
+
+            *)
+              echo "::error::Unsupported Playwright browser:"
+              echo "::error::${{ inputs.playwright_browser }}"
+              echo "::error::Currently supported for OS dependency installation: chromium"
+              exit 1
+              ;;
+
+          esac
+
+          echo "Required Playwright OS packages:"
+          echo "$packages"
+
+          # ========================================================
+          # CHECK WHETHER PACKAGES ARE ALREADY INSTALLED
+          #
+          # Shared runners may already have these packages.
+          # Avoid unnecessary apt operations where possible.
+          # ========================================================
+
+          # shellcheck disable=SC2086
+          count="$(echo $packages | wc -w)"
+
+          # shellcheck disable=SC2086
+          installed="$(
+            dpkg-query -W -f='${Status}\n' $packages 2>/dev/null |
+              grep -c "install ok installed" || true
+          )"
+
+          if [ "$installed" = "$count" ]; then
+            echo "Playwright Chromium libraries already installed ($count packages)."
+            exit 0
+          fi
+
+          echo "Playwright dependencies installed: $installed / $count"
+          echo "Installing missing Playwright OS dependencies..."
+
+          # ========================================================
+          # APT INSTALL WITH RETRIES
+          #
+          # Multiple GitHub jobs can share the same runner and compete
+          # for the dpkg lock. Retry a few times if that happens.
+          # ========================================================
+
+          for attempt in 1 2 3; do
+
+            echo "APT installation attempt $attempt / 3"
+
+            # shellcheck disable=SC2086
+            if sudo apt-get \
+                -o DPkg::Lock::Timeout=300 \
+                update -qq \
+              && \
+              # shellcheck disable=SC2086
+              sudo apt-get \
+                -o DPkg::Lock::Timeout=300 \
+                install -y --no-install-recommends $packages; then
+
+              echo "Playwright OS dependencies installed successfully."
+              exit 0
+            fi
+
+            echo "APT attempt $attempt failed."
+            echo "This may be caused by another job holding the dpkg lock."
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "Waiting 20 seconds before retry..."
+              sleep 20
+            fi
+
+          done
+
+          echo "::error::Failed to install Playwright OS dependencies after 3 attempts."
+          exit 1
 
       # ============================================================
       # INSTALL PLAYWRIGHT BROWSER
+      #
+      # This does NOT require sudo.
       # ============================================================
 
       - name: Install Playwright browser
@@ -717,6 +842,8 @@ jobs:
 
       # ============================================================
       # RUN PLAYWRIGHT
+      #
+      # Explicitly pass the configured Playwright config.
       # ============================================================
 
       - name: Run Playwright E2E tests
@@ -728,7 +855,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          npx playwright test "${{ inputs.e2e_test_path }}"
+          npx playwright test \
+            -c "${{ inputs.playwright_config }}" \
+            "${{ inputs.e2e_test_path }}"
 
       # ============================================================
       # UPLOAD PLAYWRIGHT REPORT
