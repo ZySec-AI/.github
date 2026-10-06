@@ -8,6 +8,7 @@ on:
         type: string
         required: false
         default: '["self-hosted","linux","x64","zysec-ai-ci"]'
+
       test_mode:
         description: "Tests to run: unit, playwright, or both"
         required: true
@@ -168,8 +169,6 @@ jobs:
 
       # ============================================================
       # ENABLE COREPACK
-      #
-      # Required for pnpm/yarn.
       # ============================================================
 
       - name: Enable Corepack
@@ -253,6 +252,19 @@ jobs:
 
       # ============================================================
       # DETECT UNIT TEST TYPE / PACKAGE MANAGER
+      #
+      # Supports:
+      #
+      # 1. Nested Node project
+      #    tests/unit/package.json
+      #
+      # 2. Root Node project
+      #    package.json
+      #    tests/unit/*.test.ts
+      #
+      # 3. Nested Python project
+      #
+      # 4. Root Python project
       # ============================================================
 
       - name: Detect unit-test package manager
@@ -270,24 +282,41 @@ jobs:
         run: |
           set -euo pipefail
 
-          detect_pm() {
-            if [ -f pnpm-lock.yaml ]; then
-              echo pnpm
-            elif [ -f yarn.lock ]; then
-              echo yarn
-            elif [ -f package-lock.json ]; then
-              echo npm
+          ROOT_DIR="${GITHUB_WORKSPACE:-$PWD}"
+
+          detect_node_pm() {
+            local DIR="$1"
+
+            if [ -f "$DIR/pnpm-lock.yaml" ]; then
+              echo "pnpm"
+
+            elif [ -f "$DIR/yarn.lock" ]; then
+              echo "yarn"
+
+            elif [ -f "$DIR/package-lock.json" ]; then
+              echo "npm"
+
+            else
+              echo ""
             fi
           }
 
-          ROOT_DIR="${GITHUB_WORKSPACE:-$PWD}"
+          echo "========================================"
+          echo "Detecting unit-test runner"
+          echo "Repository root: $ROOT_DIR"
+          echo "Unit test path:  $UNIT_PATH"
+          echo "========================================"
+
+          # ========================================================
+          # NESTED NODE PROJECT
+          # ========================================================
 
           if [ -f "$UNIT_PATH/package.json" ]; then
-            cd "$UNIT_PATH"
-            PM="$(detect_pm || true)"
+
+            PM="$(detect_node_pm "$UNIT_PATH")"
 
             if [ -z "$PM" ]; then
-              echo "::error::Node unit tests require a lockfile in $UNIT_PATH."
+              echo "::error::Node unit-test project found at '$UNIT_PATH', but no lockfile was found."
               echo "::error::Expected pnpm-lock.yaml, yarn.lock, or package-lock.json."
               exit 1
             fi
@@ -295,56 +324,104 @@ jobs:
             echo "type=node" >> "$GITHUB_OUTPUT"
             echo "pm=$PM" >> "$GITHUB_OUTPUT"
             echo "location=nested" >> "$GITHUB_OUTPUT"
+
             echo "Unit-test type: Node"
             echo "Unit-test package manager: $PM"
-            echo "Detected package.json: $UNIT_PATH/package.json"
+            echo "Unit-test location: nested"
+            echo "Package: $UNIT_PATH/package.json"
 
-          elif [ -f "$UNIT_PATH/pytest.ini" ] || \
-               [ -f "$UNIT_PATH/pyproject.toml" ] || \
-               [ -f "$UNIT_PATH/requirements.txt" ]; then
-
-            echo "type=python" >> "$GITHUB_OUTPUT"
-            echo "pm=python" >> "$GITHUB_OUTPUT"
-            echo "location=nested" >> "$GITHUB_OUTPUT"
-            echo "Unit-test type: Python"
-            echo "Unit-test location: $UNIT_PATH"
-
-          elif [ -f "$ROOT_DIR/package.json" ]; then
-            PM="${ROOT_PM:-}"
-            if [ -z "$PM" ]; then
-              cd "$ROOT_DIR"
-              PM="$(detect_pm || true)"
-            fi
-
-            if [ -z "$PM" ]; then
-              echo "::error::package.json exists but no lockfile was found."
-              echo "::error::Expected pnpm-lock.yaml, yarn.lock, or package-lock.json."
-              exit 1
-            fi
-
-            echo "type=node" >> "$GITHUB_OUTPUT"
-            echo "pm=$PM" >> "$GITHUB_OUTPUT"
-            echo "location=root" >> "$GITHUB_OUTPUT"
-            echo "Unit-test type: Node"
-            echo "Unit-test package manager: $PM"
-            echo "Detected package.json: $ROOT_DIR/package.json"
-            echo "Test cases: $UNIT_PATH"
-
-          elif [ -f "$ROOT_DIR/pytest.ini" ] || \
-               [ -f "$ROOT_DIR/pyproject.toml" ] || \
-               [ -f "$ROOT_DIR/requirements.txt" ]; then
-
-            echo "type=python" >> "$GITHUB_OUTPUT"
-            echo "pm=python" >> "$GITHUB_OUTPUT"
-            echo "location=root" >> "$GITHUB_OUTPUT"
-            echo "Unit-test type: Python"
-            echo "Test cases: $UNIT_PATH"
-
-          else
-            echo "::error::Unable to detect unit-test runner."
-            echo "::error::$UNIT_PATH has test files only, and $ROOT_DIR/package.json was not found."
-            exit 1
+            exit 0
           fi
+
+          # ========================================================
+          # NESTED PYTHON PROJECT
+          # ========================================================
+
+          if [ -f "$UNIT_PATH/pytest.ini" ] || \
+             [ -f "$UNIT_PATH/pyproject.toml" ] || \
+             [ -f "$UNIT_PATH/requirements.txt" ]; then
+
+            echo "type=python" >> "$GITHUB_OUTPUT"
+            echo "pm=python" >> "$GITHUB_OUTPUT"
+            echo "location=nested" >> "$GITHUB_OUTPUT"
+
+            echo "Unit-test type: Python"
+            echo "Unit-test location: nested"
+
+            exit 0
+          fi
+
+          # ========================================================
+          # ROOT NODE PROJECT
+          #
+          # Example:
+          #
+          # package.json
+          # pnpm-lock.yaml
+          # tests/unit/*.test.ts
+          # ========================================================
+
+          if [ -f "$ROOT_DIR/package.json" ]; then
+
+            PM="${ROOT_PM:-}"
+
+            if [ -z "$PM" ]; then
+              PM="$(detect_node_pm "$ROOT_DIR")"
+            fi
+
+            if [ -z "$PM" ]; then
+              echo "::error::Root package.json exists but no lockfile was found."
+              echo "::error::Expected pnpm-lock.yaml, yarn.lock, or package-lock.json."
+              exit 1
+            fi
+
+            echo "type=node" >> "$GITHUB_OUTPUT"
+            echo "pm=$PM" >> "$GITHUB_OUTPUT"
+            echo "location=root" >> "$GITHUB_OUTPUT"
+
+            echo "Unit-test type: Node"
+            echo "Unit-test package manager: $PM"
+            echo "Unit-test location: root"
+            echo "Package: $ROOT_DIR/package.json"
+            echo "Test cases: $UNIT_PATH"
+
+            exit 0
+          fi
+
+          # ========================================================
+          # ROOT PYTHON PROJECT
+          # ========================================================
+
+          if [ -f "$ROOT_DIR/pytest.ini" ] || \
+             [ -f "$ROOT_DIR/pyproject.toml" ] || \
+             [ -f "$ROOT_DIR/requirements.txt" ]; then
+
+            echo "type=python" >> "$GITHUB_OUTPUT"
+            echo "pm=python" >> "$GITHUB_OUTPUT"
+            echo "location=root" >> "$GITHUB_OUTPUT"
+
+            echo "Unit-test type: Python"
+            echo "Unit-test location: root"
+            echo "Test cases: $UNIT_PATH"
+
+            exit 0
+          fi
+
+          # ========================================================
+          # NOTHING DETECTED
+          # ========================================================
+
+          echo "::error::Unable to detect unit-test runner."
+          echo "::error::Checked:"
+          echo "::error::  $UNIT_PATH/package.json"
+          echo "::error::  $UNIT_PATH/pytest.ini"
+          echo "::error::  $UNIT_PATH/pyproject.toml"
+          echo "::error::  $UNIT_PATH/requirements.txt"
+          echo "::error::  $ROOT_DIR/package.json"
+          echo "::error::  $ROOT_DIR/pytest.ini"
+          echo "::error::  $ROOT_DIR/pyproject.toml"
+          echo "::error::  $ROOT_DIR/requirements.txt"
+          exit 1
 
       # ============================================================
       # DETECT UNIT PNPM VERSION
@@ -425,6 +502,7 @@ jobs:
           set -euo pipefail
 
           echo "present=true" >> "$GITHUB_OUTPUT"
+
           echo "Python unit-test configuration detected."
 
       # ============================================================
@@ -440,14 +518,7 @@ jobs:
       # ============================================================
       # INSTALL ROOT NODE DEPENDENCIES
       #
-      # IMPORTANT:
-      # The Git token exists ONLY for this step.
-      #
-      # It is NOT present during:
-      #   npm test
-      #   pnpm test
-      #   yarn test
-      #   Playwright
+      # Git token is available ONLY during installation.
       # ============================================================
 
       - name: Install root Node dependencies
@@ -486,8 +557,6 @@ jobs:
 
       # ============================================================
       # INSTALL PYTHON UNIT-TEST DEPENDENCIES
-      #
-      # pip install -e . is intentionally FATAL.
       # ============================================================
 
       - name: Install Python unit-test dependencies
@@ -533,7 +602,7 @@ jobs:
       # ============================================================
       # INSTALL NODE UNIT-TEST DEPENDENCIES
       #
-      # Git token is available ONLY here.
+      # Only used when unit tests are a separate nested Node project.
       # ============================================================
 
       - name: Install Node unit-test dependencies
@@ -648,20 +717,13 @@ jobs:
 
       # ============================================================
       # RUN PLAYWRIGHT
-      #
-      # always() in "both" mode means unit tests still execute
-      # even if Playwright fails.
-      #
-      # No Git token is available here.
       # ============================================================
 
       - name: Run Playwright E2E tests
         id: playwright-tests
         if: |
-          (
-            steps.mode.outputs.mode == 'playwright' ||
-            steps.mode.outputs.mode == 'both'
-          )
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
         shell: bash
         run: |
           set -euo pipefail
@@ -692,10 +754,7 @@ jobs:
       # ============================================================
       # RUN NODE UNIT TESTS
       #
-      # always() ensures unit tests execute even when Playwright
-      # fails in "both" mode.
-      #
-      # No Git token is available here.
+      # always() ensures unit tests still execute if Playwright fails.
       # ============================================================
 
       - name: Run Node unit tests
@@ -713,6 +772,10 @@ jobs:
           if [ "$UNIT_LOCATION" = "nested" ]; then
             cd "$UNIT_PATH"
           fi
+
+          echo "Running Node unit tests"
+          echo "Location: $UNIT_LOCATION"
+          echo "Path: ${UNIT_PATH}"
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
 
@@ -737,11 +800,6 @@ jobs:
 
       # ============================================================
       # RUN PYTHON UNIT TESTS
-      #
-      # always() ensures unit tests execute even when Playwright
-      # fails in "both" mode.
-      #
-      # No Git token is available here.
       # ============================================================
 
       - name: Run Python unit tests
@@ -765,11 +823,6 @@ jobs:
 
       # ============================================================
       # FINAL QUALITY GATE
-      #
-      # "both" requires BOTH suites to pass.
-      #
-      # A failure in one suite does not prevent the other suite
-      # from executing.
       # ============================================================
 
       - name: Quality Gate
