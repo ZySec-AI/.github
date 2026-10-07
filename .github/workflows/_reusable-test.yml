@@ -107,12 +107,9 @@ jobs:
 
       RELATADB_URL: http://localhost:9090
 
-      # Bootstrap credential.
-      # Used only where RelataDB expects the bootstrap credential.
-      RELATA_BEARER_TOKEN: threatmap-bootstrap
-
-      # Admin credential used to mint tenant-scoped tokens.
-      RELATA_ADMIN_TOKEN: threatmap-admin
+      # Same value Compose already maps to RELATA_BEARER_TOKEN via
+      # ${RELATADB_TOKEN:-threatmap-default}. No Compose edit required.
+      RELATADB_TOKEN: threatmap-default
 
       RELATADB_REQUIRED: "1"
 
@@ -617,9 +614,6 @@ jobs:
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
         shell: bash
-        env:
-          RELATA_BEARER_TOKEN: threatmap-bootstrap
-          RELATA_ADMIN_TOKEN: threatmap-admin
         run: |
           set -euo pipefail
 
@@ -629,9 +623,8 @@ jobs:
 
           docker compose down -v --remove-orphans || true
 
-          export RELATA_BEARER_TOKEN
-          export RELATA_ADMIN_TOKEN
-
+          # Job env RELATADB_TOKEN is what Compose already interpolates
+          # into RELATA_BEARER_TOKEN. The Compose file is unchanged.
           docker compose up -d --force-recreate relatadb
 
           docker compose ps
@@ -694,87 +687,45 @@ jobs:
           exit 1
 
       # ============================================================
-      # MINT TENANT TOKEN
+      # CONFIGURE TENANT TOKEN
       #
-      # IMPORTANT:
+      # ThreatMap Compose already sets:
+      #   RELATA_BEARER_TOKEN=${RELATADB_TOKEN:-threatmap-default}
       #
-      # Replace TOKEN_ENDPOINT below with the actual RelataDB
-      # token-minting endpoint used by your installation.
+      # There is no host mint route on that service. The previous step
+      # POSTed to ${RELATADB_URL}/<YOUR_EXISTING_TOKEN_ENDPOINT>. The
+      # raw angle brackets make that URI illegal, so RelataDB returns
+      # HTTP 400 with an empty body.
       #
-      # The response is expected to contain:
-      #
-      #   {"token":"..."}
-      #
-      # If your API returns a different field, change TOKEN_JSON_PATH.
+      # Use the same bearer the container was started with.
       # ============================================================
 
-      - name: Mint RelataDB tenant token
+      - name: Configure RelataDB tenant token
         if: |
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
         shell: bash
-        env:
-          RELATA_ADMIN_TOKEN: ${{ env.RELATA_ADMIN_TOKEN }}
-          RELATADB_ORG_ID: ${{ env.RELATADB_ORG_ID }}
         run: |
           set -euo pipefail
 
           echo "========================================"
-          echo "Minting RelataDB tenant token"
+          echo "Configuring RelataDB tenant token"
           echo "========================================"
 
-          RESPONSE_FILE="$(mktemp)"
-          trap 'rm -f "$RESPONSE_FILE"' EXIT
+          CONTAINER_ID="$(docker compose ps -q relatadb)"
 
-          REQUEST_BODY='{
-            "tenant_id": "threatmap",
-            "organization_id": "threatmap"
-          }'
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "::error::RelataDB container was not created."
+            exit 1
+          fi
 
-          # --------------------------------------------------------
-          # IMPORTANT:
-          #
-          # Replace this path with the real token endpoint.
-          # --------------------------------------------------------
-
-          TOKEN_ENDPOINT="${RELATADB_URL}/<YOUR_EXISTING_TOKEN_ENDPOINT>"
-
-          HTTP_STATUS="$(
-            curl \
-              -sS \
-              -o "$RESPONSE_FILE" \
-              -w "%{http_code}" \
-              -X POST \
-              "$TOKEN_ENDPOINT" \
-              -H "Authorization: Bearer ${RELATA_ADMIN_TOKEN}" \
-              -H "X-Organization-Id: ${RELATADB_ORG_ID}" \
-              -H "Content-Type: application/json" \
-              --data "$REQUEST_BODY"
+          TOKEN="$(
+            docker inspect "$CONTAINER_ID" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+              | sed -n 's/^RELATA_BEARER_TOKEN=//p'
           )"
 
-          echo "HTTP status: $HTTP_STATUS"
-
-          if [ "$HTTP_STATUS" != "200" ] && \
-             [ "$HTTP_STATUS" != "201" ]; then
-
-            echo "::error::RelataDB token minting failed."
-            echo "::error::HTTP status: $HTTP_STATUS"
-            echo "::error::Response:"
-            cat "$RESPONSE_FILE"
-
-            exit 1
-          fi
-
-          if ! command -v jq >/dev/null 2>&1; then
-            echo "::error::jq is required to parse the RelataDB token response."
-            exit 1
-          fi
-
-          TOKEN="$(jq -r '.token // empty' "$RESPONSE_FILE")"
-
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-            echo "::error::RelataDB token response did not contain '.token'."
-            echo "::error::Check the token endpoint response format."
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RelataDB container has no RELATA_BEARER_TOKEN."
             exit 1
           fi
 
@@ -784,7 +735,7 @@ jobs:
             echo "RELATADB_TOKEN=$TOKEN"
           } >> "$GITHUB_ENV"
 
-          echo "RelataDB tenant token created successfully."
+          echo "RelataDB bearer token matches the running container."
 
       # ============================================================
       # VERIFY RELATABD AUTHENTICATION
