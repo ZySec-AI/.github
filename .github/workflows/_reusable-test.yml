@@ -708,7 +708,7 @@ jobs:
       # The admin listener is loopback-only, so the request is made
       # from inside the RelataDB container.
       # ============================================================
-      
+
       - name: Mint RelataDB tenant token
         env:
           RELATADB_URL: ${{ env.RELATADB_URL }}
@@ -721,8 +721,22 @@ jobs:
           echo "Minting RelataDB tenant token"
           echo "========================================"
 
+          : "${RELATADB_URL:?RELATADB_URL is required}"
+          : "${RELATA_ADMIN_TOKEN:?RELATA_ADMIN_TOKEN is required}"
+          : "${RELATADB_ORG_ID:?RELATADB_ORG_ID is required}"
+
           RESPONSE_FILE="$(mktemp)"
           trap 'rm -f "$RESPONSE_FILE"' EXIT
+
+          REQUEST_BODY='{
+            "tenant_id": "threatmap",
+            "organization_id": "threatmap"
+          }'
+
+          echo "RelataDB URL: ${RELATADB_URL}"
+          echo "Organization: ${RELATADB_ORG_ID}"
+          echo "Tenant: threatmap"
+          echo
 
           HTTP_STATUS="$(
             curl \
@@ -734,7 +748,7 @@ jobs:
               -H "Authorization: Bearer ${RELATA_ADMIN_TOKEN}" \
               -H "X-Organization-Id: ${RELATADB_ORG_ID}" \
               -H "Content-Type: application/json" \
-              --data '{"tenant_id":"threatmap"}'
+              --data "$REQUEST_BODY"
           )"
 
           echo "HTTP status: $HTTP_STATUS"
@@ -742,15 +756,23 @@ jobs:
           cat "$RESPONSE_FILE"
           echo
 
-          case "$HTTP_STATUS" in
-            200|201)
-              echo "✓ RelataDB tenant token minted successfully."
-              ;;
-            *)
-              echo "::error::RelataDB tenant-token minting failed with HTTP $HTTP_STATUS"
-              exit 1
-              ;;
-          esac
+          if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "201" ]; then
+            echo "::error::RelataDB tenant-token minting failed with HTTP $HTTP_STATUS"
+            echo "::error::The request reached RelataDB, but the token-mint endpoint rejected the request."
+            exit 1
+          fi
+
+          echo "✓ RelataDB tenant token minted successfully."
+
+          # Keep the response available to subsequent steps without exposing
+          # the token in the GitHub Actions log.
+          {
+            echo 'RELATADB_TENANT_TOKEN<<RELATA_TOKEN_EOF'
+            cat "$RESPONSE_FILE"
+            echo
+            echo 'RELATA_TOKEN_EOF'
+          } >> "$GITHUB_ENV"
+
 
 
 
