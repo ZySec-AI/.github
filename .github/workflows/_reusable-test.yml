@@ -1050,6 +1050,33 @@ jobs:
           echo "E2E provisioning: $E2E_PROVISION_LOCAL_ADMIN"
           echo "Playwright server: production"
 
+          # Production login refuses to run without REDIS_URL
+          # (auth.redis.configuration_missing → HTTP 503).
+          REDIS_NAME="threatmap-e2e-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker rm -f "$REDIS_NAME" >/dev/null 2>&1 || true
+          docker run -d --name "$REDIS_NAME" -p "127.0.0.1::6379" redis:7-alpine
+          echo "THREATMAP_CI_REDIS_NAME=$REDIS_NAME" >> "$GITHUB_ENV"
+
+          REDIS_PORT="$(docker port "$REDIS_NAME" 6379/tcp | awk -F: 'NR==1 { print $NF }')"
+          if [ -z "$REDIS_PORT" ]; then
+            echo "::error::Redis did not publish a host port."
+            exit 1
+          fi
+          export REDIS_URL="redis://127.0.0.1:${REDIS_PORT}"
+
+          for i in $(seq 1 30); do
+            if docker exec "$REDIS_NAME" redis-cli ping 2>/dev/null | grep -q PONG; then
+              echo "Redis is ready on port $REDIS_PORT."
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::Redis did not become ready."
+              docker logs "$REDIS_NAME" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
           curl -fsS "$RELATADB_URL/health"
 
           echo
@@ -1187,6 +1214,10 @@ jobs:
           echo "========================================"
 
           docker compose down -v --remove-orphans || true
+
+          if [ -n "${THREATMAP_CI_REDIS_NAME:-}" ]; then
+            docker rm -f "$THREATMAP_CI_REDIS_NAME" || true
+          fi
 
           echo "RelataDB cleanup completed."
 
