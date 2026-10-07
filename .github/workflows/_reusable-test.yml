@@ -3,7 +3,6 @@ name: Reusable Tests
 on:
   workflow_call:
     inputs:
-      # Callers default to the organization self-hosted CI runner pool.
       runs_on:
         type: string
         required: false
@@ -69,6 +68,31 @@ jobs:
 
     timeout-minutes: 45
 
+    env:
+      # ============================================================
+      # E2E / RELATABD CONFIGURATION
+      #
+      # Keep these values identical between:
+      #
+      #   Docker Compose -> RelataDB
+      #
+      # and:
+      #
+      #   Next.js / Playwright -> RelataDB
+      #
+      # This prevents the 401 Unauthorized problem where the
+      # container is healthy but the application uses a different
+      # bearer token.
+      # ============================================================
+
+      RELATADB_URL: http://localhost:9090
+      RELATADB_TOKEN: threatmap-default
+      RELATADB_REQUIRED: "1"
+
+      # Give every GitHub Actions run its own Compose project.
+      # This is important because the runner is shared/reused.
+      COMPOSE_PROJECT_NAME: threatmap-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+
     steps:
 
       # ============================================================
@@ -113,6 +137,8 @@ jobs:
           echo "Node version:         ${{ inputs.node_version }}"
           echo "Python version:       ${{ inputs.python_version }}"
           echo "Playwright browser:   ${{ inputs.playwright_browser }}"
+          echo "RelataDB URL:         $RELATADB_URL"
+          echo "Compose project:      $COMPOSE_PROJECT_NAME"
           echo "========================================"
 
       # ============================================================
@@ -292,10 +318,6 @@ jobs:
           echo "Unit test path:  $UNIT_PATH"
           echo "========================================"
 
-          # ========================================================
-          # NESTED NODE PROJECT
-          # ========================================================
-
           if [ -f "$UNIT_PATH/package.json" ]; then
 
             PM="$(detect_node_pm "$UNIT_PATH")"
@@ -318,10 +340,6 @@ jobs:
             exit 0
           fi
 
-          # ========================================================
-          # NESTED PYTHON PROJECT
-          # ========================================================
-
           if [ -f "$UNIT_PATH/pytest.ini" ] || \
              [ -f "$UNIT_PATH/pyproject.toml" ] || \
              [ -f "$UNIT_PATH/requirements.txt" ]; then
@@ -335,10 +353,6 @@ jobs:
 
             exit 0
           fi
-
-          # ========================================================
-          # ROOT NODE PROJECT
-          # ========================================================
 
           if [ -f "$ROOT_DIR/package.json" ]; then
 
@@ -367,10 +381,6 @@ jobs:
             exit 0
           fi
 
-          # ========================================================
-          # ROOT PYTHON PROJECT
-          # ========================================================
-
           if [ -f "$ROOT_DIR/pytest.ini" ] || \
              [ -f "$ROOT_DIR/pyproject.toml" ] || \
              [ -f "$ROOT_DIR/requirements.txt" ]; then
@@ -386,20 +396,7 @@ jobs:
             exit 0
           fi
 
-          # ========================================================
-          # NOTHING DETECTED
-          # ========================================================
-
           echo "::error::Unable to detect unit-test runner."
-          echo "::error::Checked:"
-          echo "::error::  $UNIT_PATH/package.json"
-          echo "::error::  $UNIT_PATH/pytest.ini"
-          echo "::error::  $UNIT_PATH/pyproject.toml"
-          echo "::error::  $UNIT_PATH/requirements.txt"
-          echo "::error::  $ROOT_DIR/package.json"
-          echo "::error::  $ROOT_DIR/pytest.ini"
-          echo "::error::  $ROOT_DIR/pyproject.toml"
-          echo "::error::  $ROOT_DIR/requirements.txt"
           exit 1
 
       # ============================================================
@@ -430,7 +427,6 @@ jobs:
 
           if [ -z "$VERSION" ]; then
             echo "::error::Unit-test package.json must declare its pnpm version."
-            echo "::error::Example: \"packageManager\": \"pnpm@9.15.0\""
             exit 1
           fi
 
@@ -496,8 +492,6 @@ jobs:
 
       # ============================================================
       # INSTALL ROOT NODE DEPENDENCIES
-      #
-      # Git token is available ONLY during installation.
       # ============================================================
 
       - name: Install root Node dependencies
@@ -554,34 +548,21 @@ jobs:
           fi
 
           if [ -f requirements.txt ]; then
-
-            echo "Installing Python requirements.txt"
-
             python -m pip install -r requirements.txt
 
           elif [ -f pyproject.toml ]; then
-
-            echo "Installing Python project from pyproject.toml"
-
             python -m pip install -e .
 
           elif [ -f pytest.ini ]; then
-
-            echo "Installing pytest"
-
             python -m pip install pytest
 
           else
-
             echo "::error::No supported Python dependency configuration found."
             exit 1
-
           fi
 
       # ============================================================
       # INSTALL NODE UNIT-TEST DEPENDENCIES
-      #
-      # Only used when unit tests are a separate nested Node project.
       # ============================================================
 
       - name: Install Node unit-test dependencies
@@ -664,18 +645,43 @@ jobs:
           echo "Playwright tests found under: $E2E_PATH"
 
       # ============================================================
-      # START RELATABD FOR LOCAL PLAYWRIGHT E2E
+      # VERIFY DOCKER
+      # ============================================================
+
+      - name: Verify Docker
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "::error::Docker is not installed or not available on this runner."
+            exit 1
+          fi
+
+          docker --version
+          docker compose version
+
+      # ============================================================
+      # START RELATABD
       #
-      # The repository root docker-compose.yml provides:
+      # IMPORTANT:
       #
-      #   host localhost:9090
-      #       -> relatadb container :8080
+      # docker-compose.yml contains:
       #
-      # We start ONLY RelataDB because Playwright's webServer
-      # configuration is responsible for starting the Next.js app.
+      #   RELATA_BEARER_TOKEN=${RELATADB_TOKEN:-threatmap-default}
       #
-      # A fresh volume is used so E2E tests do not inherit stale
-      # data from a previous run on the shared self-hosted runner.
+      # The job-level RELATADB_TOKEN is therefore explicitly supplied
+      # to Docker Compose.
+      #
+      # The application later uses the SAME:
+      #
+      #   RELATADB_TOKEN=threatmap-default
+      #
+      # This fixes the previous situation where /health worked but
+      # authenticated /ingest returned 401.
       # ============================================================
 
       - name: Start RelataDB
@@ -687,30 +693,31 @@ jobs:
           set -euo pipefail
 
           echo "========================================"
-          echo "Starting RelataDB for Playwright E2E"
+          echo "Starting RelataDB"
           echo "========================================"
 
-          if ! command -v docker >/dev/null 2>&1; then
-            echo "::error::Docker is not installed or not available on this runner."
-            exit 1
-          fi
+          echo "Compose project: $COMPOSE_PROJECT_NAME"
+          echo "RelataDB URL:    $RELATADB_URL"
 
-          docker --version
-          docker compose version
+          echo "Cleaning only this E2E Compose project..."
 
-          echo "Cleaning previous E2E containers and volumes..."
-
-          docker compose down -v --remove-orphans || true
+          docker compose \
+            -p "$COMPOSE_PROJECT_NAME" \
+            down -v --remove-orphans || true
 
           echo "Starting RelataDB..."
 
-          docker compose up -d relatadb
+          docker compose \
+            -p "$COMPOSE_PROJECT_NAME" \
+            up -d relatadb
 
           echo "========================================"
           echo "Docker Compose status"
           echo "========================================"
 
-          docker compose ps
+          docker compose \
+            -p "$COMPOSE_PROJECT_NAME" \
+            ps
 
       # ============================================================
       # WAIT FOR RELATABD
@@ -726,16 +733,15 @@ jobs:
 
           echo "========================================"
           echo "Waiting for RelataDB"
-          echo "Endpoint: http://localhost:9090/health"
           echo "========================================"
 
           for i in {1..60}; do
 
-            if curl -fsS http://localhost:9090/health >/dev/null 2>&1; then
+            if curl -fsS "$RELATADB_URL/health" >/dev/null 2>&1; then
               echo "RelataDB is ready."
 
               echo "RelataDB health response:"
-              curl -fsS http://localhost:9090/health
+              curl -fsS "$RELATADB_URL/health"
 
               echo
               exit 0
@@ -745,7 +751,10 @@ jobs:
 
             if [ "$i" -eq 10 ] || [ "$i" -eq 20 ] || [ "$i" -eq 40 ]; then
               echo "Current RelataDB status:"
-              docker compose ps relatadb || true
+
+              docker compose \
+                -p "$COMPOSE_PROJECT_NAME" \
+                ps relatadb || true
             fi
 
             sleep 2
@@ -758,21 +767,32 @@ jobs:
           echo "Docker Compose status"
           echo "========================================"
 
-          docker compose ps || true
+          docker compose \
+            -p "$COMPOSE_PROJECT_NAME" \
+            ps || true
 
           echo "========================================"
           echo "RelataDB logs"
           echo "========================================"
 
-          docker compose logs --no-color relatadb || true
+          docker compose \
+            -p "$COMPOSE_PROJECT_NAME" \
+            logs --no-color relatadb || true
 
           exit 1
 
       # ============================================================
-      # VERIFY RELATABD FROM RUNNER
+      # VERIFY RELATABD AUTHENTICATION
+      #
+      # /health does not prove that the bearer token is correct.
+      #
+      # This verifies that the application token can authenticate
+      # against RelataDB before Playwright starts.
+      #
+      # We intentionally do not print the token.
       # ============================================================
 
-      - name: Verify RelataDB endpoint
+      - name: Verify RelataDB authentication
         if: |
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
@@ -780,24 +800,49 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Checking RelataDB from the GitHub runner..."
+          echo "========================================"
+          echo "Verifying RelataDB authentication"
+          echo "========================================"
 
-          curl -fsS http://localhost:9090/health
+          if curl -fsS \
+            -X POST \
+            -H "Authorization: Bearer ${RELATADB_TOKEN}" \
+            -H "X-Organization-Id: threatmap" \
+            -H "Content-Type: application/json" \
+            --data '{"sql":"SELECT 1"}' \
+            "$RELATADB_URL/query" >/tmp/relatadb-auth-response.json; then
 
-          echo
-          echo "RelataDB is reachable from localhost:9090."
+            echo "RelataDB authentication succeeded."
+
+            echo "Response:"
+            cat /tmp/relatadb-auth-response.json
+            echo
+
+          else
+
+            echo "::error::RelataDB health endpoint is reachable, but authenticated API access failed."
+
+            echo "========================================"
+            echo "RelataDB container status"
+            echo "========================================"
+
+            docker compose \
+              -p "$COMPOSE_PROJECT_NAME" \
+              ps || true
+
+            echo "========================================"
+            echo "RelataDB logs"
+            echo "========================================"
+
+            docker compose \
+              -p "$COMPOSE_PROJECT_NAME" \
+              logs --no-color --tail=200 relatadb || true
+
+            exit 1
+          fi
 
       # ============================================================
       # INSTALL PLAYWRIGHT OS DEPENDENCIES
-      #
-      # Do NOT use:
-      #
-      #   npx playwright install-deps chromium
-      #
-      # because the self-hosted runner's sudo configuration rejects
-      # Playwright's sudo invocation.
-      #
-      # Install the required packages directly using sudo apt-get.
       # ============================================================
 
       - name: Install Playwright OS dependencies
@@ -845,7 +890,6 @@ jobs:
 
             *)
               echo "::error::Unsupported runner OS: $PRETTY_NAME"
-              echo "::error::Add a Playwright dependency list for this Ubuntu release."
               exit 1
               ;;
 
@@ -853,10 +897,8 @@ jobs:
 
           echo "Installing/verifying Playwright Chromium dependencies..."
 
-          # shellcheck disable=SC2086
           sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
 
-          # shellcheck disable=SC2086
           sudo apt-get -o DPkg::Lock::Timeout=300 install -y \
             --no-install-recommends \
             $packages
@@ -876,23 +918,24 @@ jobs:
           npx playwright install "${{ inputs.playwright_browser }}"
 
       # ============================================================
-      # RUN PLAYWRIGHT
+      # RUN PLAYWRIGHT E2E TESTS
       #
-      # Playwright starts the Next.js application using the webServer
-      # configured in playwright.config.ts.
+      # Job-level environment variables are inherited by:
       #
-      # RelataDB is already running at:
+      #   npx playwright
+      #       |
+      #       +-- Playwright webServer
+      #               |
+      #               +-- Next.js
       #
-      #   http://localhost:9090
+      # Therefore Next.js/lib/db.ts receives:
       #
-      # global-setup.ts can therefore:
+      #   RELATADB_URL=http://localhost:9090
+      #   RELATADB_TOKEN=threatmap-default
+      #   RELATADB_REQUIRED=1
       #
-      #   findUserByEmail()
-      #   registerUser()
-      #   verifyEmailToken()
-      #   registerApiKey()
-      #   getBalance()
-      #   grantCredits()
+      # This is the same token used when Docker Compose created
+      # the RelataDB container.
       # ============================================================
 
       - name: Run Playwright E2E tests
@@ -901,11 +944,6 @@ jobs:
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
         shell: bash
-        env:
-          RELATADB_URL: http://localhost:9090
-          RELATADB_TOKEN: threatmap-default
-          RELATADB_REQUIRED: "1"
-          E2E_PROVISION_LOCAL_ADMIN: "1"
         run: |
           set -euo pipefail
 
@@ -914,6 +952,9 @@ jobs:
           echo "========================================"
 
           echo "RelataDB URL: $RELATADB_URL"
+          echo "RelataDB token: configured"
+          echo "RelataDB required: $RELATADB_REQUIRED"
+          echo "E2E provisioning: 1"
 
           echo "Checking RelataDB before starting Playwright..."
 
@@ -965,18 +1006,20 @@ jobs:
           echo "RelataDB container status"
           echo "========================================"
 
-          docker compose ps || true
+          docker compose \
+            -p "$COMPOSE_PROJECT_NAME" \
+            ps || true
 
           echo "========================================"
           echo "RelataDB logs"
           echo "========================================"
 
-          docker compose logs --no-color relatadb || true
+          docker compose \
+            -p "$COMPOSE_PROJECT_NAME" \
+            logs --no-color relatadb || true
 
       # ============================================================
       # RUN NODE UNIT TESTS
-      #
-      # always() ensures unit tests still execute if Playwright fails.
       # ============================================================
 
       - name: Run Node unit tests
@@ -997,7 +1040,7 @@ jobs:
 
           echo "Running Node unit tests"
           echo "Location: $UNIT_LOCATION"
-          echo "Path: ${UNIT_PATH}"
+          echo "Path: $UNIT_PATH"
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
 
@@ -1045,9 +1088,6 @@ jobs:
 
       # ============================================================
       # CLEAN UP RELATABD
-      #
-      # Always remove the container and volume because these are
-      # isolated E2E resources on a shared self-hosted runner.
       # ============================================================
 
       - name: Stop RelataDB
@@ -1065,7 +1105,9 @@ jobs:
           echo "Stopping RelataDB"
           echo "========================================"
 
-          docker compose down -v --remove-orphans
+          docker compose \
+            -p "$COMPOSE_PROJECT_NAME" \
+            down -v --remove-orphans
 
           echo "RelataDB cleanup completed."
 
