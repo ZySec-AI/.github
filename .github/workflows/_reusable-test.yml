@@ -63,34 +63,34 @@ on:
         default: true
 
       working_directory:
-        description: "App directory. ThreatMap uses the repository root."
+        description: "Application directory"
         required: false
         type: string
         default: "."
 
       database:
-        description: "auto detects the app database from Compose files. relatadb, mongodb, or none forces that block."
+        description: "Database mode: auto, relatadb, mongodb, or none"
         required: false
         type: string
         default: "auto"
 
       unit_command:
-        description: "Unit command run inside working_directory. Empty uses pnpm test, npm test, or pytest."
+        description: "Custom unit-test command"
         required: false
         type: string
         default: ""
 
-      playwright_extra_config:
-        description: "Second Playwright config, relative to working_directory. Used when database is none."
+      secondary_playwright_config:
+        description: "Optional second Playwright configuration"
         required: false
         type: string
         default: ""
 
       node_required:
-        description: "Fail when working_directory has no Node lockfile."
+        description: "Fail when no Node project and no Python project is detected"
         required: false
-        type: string
-        default: "true"
+        type: boolean
+        default: true
 
     # ============================================================
     # SECRETS
@@ -112,42 +112,9 @@ jobs:
 
     name: Quality Gates
 
-    # ================================================================
-    # IMPORTANT:
-    #
-    # There is NO ubuntu-latest here.
-    #
-    # The app repository provides runs_on as JSON and this reusable
-    # workflow converts it into the actual runner label array.
-    # ================================================================
-
     runs-on: ${{ fromJSON(inputs.runs_on) }}
 
     timeout-minutes: 45
-
-    # ================================================================
-    # ENVIRONMENT
-    # ================================================================
-
-    env:
-
-      # --------------------------------------------------------------
-      # RelataDB
-      # --------------------------------------------------------------
-
-      RELATADB_URL: http://localhost:9090
-
-      # Same value Compose already maps to RELATA_BEARER_TOKEN via
-      # ${RELATADB_TOKEN:-threatmap-default}. No Compose edit required.
-      RELATADB_TOKEN: threatmap-default
-
-      RELATADB_REQUIRED: "1"
-
-      # Tenant / organization used by the E2E application.
-      RELATADB_ORG_ID: threatmap
-
-      # Unique Compose project for this GitHub Actions run.
-      COMPOSE_PROJECT_NAME: threatmap-e2e-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
 
@@ -204,10 +171,41 @@ jobs:
           echo "Node version:       ${{ inputs.node_version }}"
           echo "Python version:     ${{ inputs.python_version }}"
           echo "Playwright browser: ${{ inputs.playwright_browser }}"
-          echo "RelataDB URL:       $RELATADB_URL"
-          echo "RelataDB org:       $RELATADB_ORG_ID"
-          echo "Compose project:    $COMPOSE_PROJECT_NAME"
+          echo "Working directory:  ${{ inputs.working_directory }}"
+          echo "Database input:     ${{ inputs.database }}"
           echo "========================================"
+
+      # ============================================================
+      # RESOLVE APP PATHS
+      # ============================================================
+
+      - name: Resolve app paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_DIR="${{ inputs.working_directory }}"
+          APP_DIR="${APP_DIR%/}"
+
+          if [ -z "$APP_DIR" ]; then
+            APP_DIR="."
+          fi
+
+          UNIT_DIR="$APP_DIR/${{ inputs.unit_test_path }}"
+          E2E_DIR="$APP_DIR/${{ inputs.e2e_test_path }}"
+
+          {
+            echo "APP_DIR=$APP_DIR"
+            echo "UNIT_DIR=$UNIT_DIR"
+            echo "E2E_DIR=$E2E_DIR"
+          } >> "$GITHUB_ENV"
+
+          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
+
+          echo "App directory: $APP_DIR"
+          echo "Unit directory: $UNIT_DIR"
+          echo "E2E directory: $E2E_DIR"
 
       # ============================================================
       # DETECT APPLICATION DATABASE
@@ -220,6 +218,7 @@ jobs:
           set -euo pipefail
 
           REQUESTED="${{ inputs.database }}"
+
           if [ "$REQUESTED" != "auto" ]; then
             echo "database=$REQUESTED" >> "$GITHUB_OUTPUT"
             echo "Database forced by caller: $REQUESTED"
@@ -233,39 +232,58 @@ jobs:
           found_clickhouse=0
 
           while IFS= read -r file; do
+
             [ -f "$file" ] || continue
+
             if grep -Eiq 'relata-db|relatadb|RELATADB_' "$file"; then
               found_relata=1
             fi
+
             if grep -Eiq 'mongodb|image:[[:space:]]*mongo' "$file"; then
               found_mongo=1
             fi
+
             if grep -Eiq 'falkordb|falkor' "$file"; then
               found_falkor=1
             fi
+
             if grep -Eiq 'minio' "$file"; then
               found_minio=1
             fi
+
             if grep -Eiq 'clickhouse' "$file"; then
               found_clickhouse=1
             fi
-          done < <(find . -type f \
-            \( -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' -o -name 'compose.yml' -o -name 'compose.yaml' \) \
-            -not -path '*/node_modules/*' -not -path '*/.git/*')
+
+          done < <(
+            find "$APP_DIR" -type f \
+              \( \
+                -name 'docker-compose*.yml' \
+                -o -name 'docker-compose*.yaml' \
+                -o -name 'compose.yml' \
+                -o -name 'compose.yaml' \
+              \) \
+              -not -path '*/node_modules/*' \
+              -not -path '*/.git/*'
+          )
 
           noted=""
+
           [ "$found_falkor" -eq 1 ] && noted="${noted} falkordb"
           [ "$found_minio" -eq 1 ] && noted="${noted} minio"
           [ "$found_clickhouse" -eq 1 ] && noted="${noted} clickhouse"
+
           noted="${noted# }"
+
           echo "noted=$noted" >> "$GITHUB_OUTPUT"
 
           if [ -n "$noted" ]; then
-            echo "Recognized supporting services with no test block yet:$noted"
+            echo "Recognized supporting services with no test block yet: $noted"
           fi
 
           if [ "$found_relata" -eq 1 ] && [ "$found_mongo" -eq 1 ]; then
-            echo "::error::Both RelataDB and MongoDB are declared. Set the database input to choose one."
+            echo "::error::Both RelataDB and MongoDB are declared."
+            echo "::error::Set the database input to choose one."
             exit 1
           fi
 
@@ -278,7 +296,42 @@ jobs:
           fi
 
           echo "database=$selected" >> "$GITHUB_OUTPUT"
+
           echo "Detected application database: $selected"
+
+      # ============================================================
+      # CONFIGURE DATABASE
+      # ============================================================
+
+      - name: Configure selected database
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ steps.detect-database.outputs.database }}" in
+
+            relatadb)
+
+              {
+                echo "RELATADB_URL=http://localhost:9090"
+                echo "RELATADB_TOKEN=threatmap-default"
+                echo "RELATADB_ORG_ID=threatmap"
+                echo "COMPOSE_PROJECT_NAME=threatmap-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              } >> "$GITHUB_ENV"
+
+              echo "RelataDB environment configured."
+
+              ;;
+
+            mongodb|none)
+
+              echo "RELATADB_REQUIRED=0" >> "$GITHUB_ENV"
+
+              echo "RelataDB is not required for ${{ steps.detect-database.outputs.database }}."
+
+              ;;
+
+          esac
 
       # ============================================================
       # DETECT ROOT NODE PACKAGE MANAGER
@@ -294,22 +347,44 @@ jobs:
         run: |
           set -euo pipefail
 
-          APP="${{ inputs.working_directory }}"
+          APP="$APP_DIR"
+
+          is_python_dir() {
+            [ -f "$1/pyproject.toml" ] ||
+            [ -f "$1/pytest.ini" ] ||
+            [ -f "$1/requirements.txt" ]
+          }
 
           if [ -f "$APP/pnpm-lock.yaml" ]; then
+
             PM="pnpm"
+
           elif [ -f "$APP/yarn.lock" ]; then
+
             PM="yarn"
+
           elif [ -f "$APP/package-lock.json" ]; then
+
             PM="npm"
+
           elif [ -f "$APP/package.json" ]; then
+
             echo "::error::package.json exists but no lockfile was found in $APP."
             exit 1
+
+          elif is_python_dir "$APP" || is_python_dir "$UNIT_DIR"; then
+
+            PM="none"
+
           elif [ "${{ inputs.node_required }}" = "true" ]; then
+
             echo "::error::No supported Node package configuration found in $APP."
             exit 1
+
           else
+
             PM="none"
+
           fi
 
           echo "pm=$PM" >> "$GITHUB_OUTPUT"
@@ -397,10 +472,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          UNIT_PATH="${{ inputs.working_directory }}/${{ inputs.unit_test_path }}"
-
-          if [ ! -d "$UNIT_PATH" ]; then
-            echo "::error::Required unit test directory '$UNIT_PATH' does not exist."
+          if [ ! -d "$UNIT_DIR" ]; then
+            echo "::error::Required unit test directory '$UNIT_DIR' does not exist."
             exit 1
           fi
 
@@ -421,12 +494,12 @@ jobs:
           steps.check-unit-tests.outputs.present == 'true'
         shell: bash
         env:
-          UNIT_PATH: ${{ inputs.unit_test_path }}
           ROOT_PM: ${{ steps.package-manager.outputs.pm }}
         run: |
           set -euo pipefail
 
-          ROOT_DIR="${GITHUB_WORKSPACE:-$PWD}"
+          ROOT_DIR="$APP_DIR"
+          UNIT_PATH="$UNIT_DIR"
 
           detect_node_pm() {
             local DIR="$1"
@@ -456,10 +529,11 @@ jobs:
             echo "location=nested" >> "$GITHUB_OUTPUT"
 
             exit 0
+
           fi
 
-          if [ -f "$UNIT_PATH/pytest.ini" ] || \
-             [ -f "$UNIT_PATH/pyproject.toml" ] || \
+          if [ -f "$UNIT_PATH/pytest.ini" ] ||
+             [ -f "$UNIT_PATH/pyproject.toml" ] ||
              [ -f "$UNIT_PATH/requirements.txt" ]; then
 
             echo "type=python" >> "$GITHUB_OUTPUT"
@@ -467,6 +541,7 @@ jobs:
             echo "location=nested" >> "$GITHUB_OUTPUT"
 
             exit 0
+
           fi
 
           if [ -f "$ROOT_DIR/package.json" ]; then
@@ -478,7 +553,7 @@ jobs:
             fi
 
             if [ -z "$PM" ]; then
-              echo "::error::Root package.json exists but no lockfile was found."
+              echo "::error::App package.json exists but no lockfile was found in $ROOT_DIR."
               exit 1
             fi
 
@@ -487,10 +562,11 @@ jobs:
             echo "location=root" >> "$GITHUB_OUTPUT"
 
             exit 0
+
           fi
 
-          if [ -f "$ROOT_DIR/pytest.ini" ] || \
-             [ -f "$ROOT_DIR/pyproject.toml" ] || \
+          if [ -f "$ROOT_DIR/pytest.ini" ] ||
+             [ -f "$ROOT_DIR/pyproject.toml" ] ||
              [ -f "$ROOT_DIR/requirements.txt" ]; then
 
             echo "type=python" >> "$GITHUB_OUTPUT"
@@ -498,6 +574,7 @@ jobs:
             echo "location=root" >> "$GITHUB_OUTPUT"
 
             exit 0
+
           fi
 
           echo "::error::Unable to detect unit-test runner."
@@ -517,7 +594,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd "${{ inputs.unit_test_path }}"
+          cd "$UNIT_DIR"
 
           VERSION="$(
             node -pe '
@@ -594,19 +671,24 @@ jobs:
           cd "${{ inputs.working_directory }}"
 
           case "${{ steps.package-manager.outputs.pm }}" in
+
             pnpm)
               pnpm install --frozen-lockfile
               ;;
+
             yarn)
               yarn install --immutable
               ;;
+
             npm)
               npm ci
               ;;
+
             *)
               echo "::error::Unsupported package manager."
               exit 1
               ;;
+
           esac
 
       # ============================================================
@@ -617,7 +699,6 @@ jobs:
         if: steps.unit-package-manager.outputs.type == 'python'
         shell: bash
         env:
-          UNIT_PATH: ${{ inputs.unit_test_path }}
           UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
         run: |
           set -euo pipefail
@@ -625,18 +706,28 @@ jobs:
           python -m pip install --upgrade pip
 
           if [ "$UNIT_LOCATION" = "nested" ]; then
-            cd "$UNIT_PATH"
+            cd "$UNIT_DIR"
+          else
+            cd "$APP_DIR"
           fi
 
           if [ -f requirements.txt ]; then
+
             python -m pip install -r requirements.txt
+
           elif [ -f pyproject.toml ]; then
+
             python -m pip install -e .
+
           elif [ -f pytest.ini ]; then
+
             python -m pip install pytest
+
           else
+
             echo "::error::No supported Python dependency configuration found."
             exit 1
+
           fi
 
       # ============================================================
@@ -655,23 +746,133 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd "${{ inputs.unit_test_path }}"
+          cd "$UNIT_DIR"
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
+
             pnpm)
               pnpm install --frozen-lockfile
               ;;
+
             yarn)
               yarn install --immutable
               ;;
+
             npm)
               npm ci
               ;;
+
             *)
               echo "::error::Unsupported unit-test package manager."
               exit 1
               ;;
+
           esac
+
+      # ============================================================
+      # RUN CUSTOM UNIT TESTS
+      # ============================================================
+
+      - name: Run custom unit command
+        id: custom-unit-tests
+        if: |
+          inputs.unit_command != '' &&
+          (
+            steps.mode.outputs.mode == 'unit' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ${{ inputs.unit_command }}
+
+      # ============================================================
+      # RUN NODE UNIT TESTS
+      # ============================================================
+
+      - name: Run Node unit tests
+        id: node-unit-tests
+        if: |
+          always() &&
+          inputs.unit_command == '' &&
+          steps.unit-package-manager.outputs.type == 'node'
+        shell: bash
+        env:
+          UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
+        run: |
+          set -euo pipefail
+
+          if [ "$UNIT_LOCATION" = "nested" ]; then
+            cd "$UNIT_DIR"
+          else
+            cd "$APP_DIR"
+          fi
+
+          case "${{ steps.unit-package-manager.outputs.pm }}" in
+
+            pnpm)
+              pnpm test
+              ;;
+
+            yarn)
+              yarn test
+              ;;
+
+            npm)
+              npm test
+              ;;
+
+            *)
+              echo "::error::Unsupported unit-test package manager."
+              exit 1
+              ;;
+
+          esac
+
+      # ============================================================
+      # RUN PYTHON UNIT TESTS
+      # ============================================================
+
+      - name: Run Python unit tests
+        id: python-unit-tests
+        if: |
+          always() &&
+          inputs.unit_command == '' &&
+          steps.unit-package-manager.outputs.type == 'python'
+        shell: bash
+        env:
+          UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
+        run: |
+          set -euo pipefail
+
+          if [ "$UNIT_LOCATION" = "nested" ]; then
+
+            cd "$UNIT_DIR"
+            python -m pytest .
+
+          else
+
+            cd "$APP_DIR"
+
+            # IMPORTANT:
+            # Do not use "$UNIT_DIR" here because UNIT_DIR already
+            # contains APP_DIR.
+            #
+            # Example:
+            #   APP_DIR=backend
+            #   unit_test_path=tests
+            #
+            # "$UNIT_DIR" would become:
+            #   backend/tests
+            #
+            # After "cd backend", that would incorrectly resolve to:
+            #   backend/backend/tests
+            #
+            # Use the caller-provided unit_test_path instead.
+            python -m pytest "${{ inputs.unit_test_path }}"
+
+          fi
 
       # ============================================================
       # VERIFY PLAYWRIGHT CONFIGURATION
@@ -692,10 +893,14 @@ jobs:
             exit 1
           fi
 
-          EXTRA="${{ inputs.playwright_extra_config }}"
-          if [ -n "$EXTRA" ] && [ ! -f "${{ inputs.working_directory }}/$EXTRA" ]; then
+          EXTRA="${{ inputs.secondary_playwright_config }}"
+
+          if [ -n "$EXTRA" ] &&
+             [ ! -f "${{ inputs.working_directory }}/$EXTRA" ]; then
+
             echo "::error::Playwright configuration '${{ inputs.working_directory }}/$EXTRA' does not exist."
             exit 1
+
           fi
 
       # ============================================================
@@ -753,27 +958,50 @@ jobs:
           set -euo pipefail
 
           MONGO_NAME="ci-mongodb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
           docker rm -f "$MONGO_NAME" >/dev/null 2>&1 || true
-          docker run -d --name "$MONGO_NAME" -p "127.0.0.1::27017" mongo:8
+
+          docker run \
+            -d \
+            --name "$MONGO_NAME" \
+            -p "127.0.0.1::27017" \
+            mongo:8
+
           echo "CI_MONGO_NAME=$MONGO_NAME" >> "$GITHUB_ENV"
 
-          MONGO_PORT="$(docker port "$MONGO_NAME" 27017/tcp | awk -F: 'NR==1 { print $NF }')"
+          MONGO_PORT="$(
+            docker port "$MONGO_NAME" 27017/tcp |
+            awk -F: 'NR==1 { print $NF }'
+          )"
+
           if [ -z "$MONGO_PORT" ]; then
             echo "::error::MongoDB did not publish a host port."
             exit 1
           fi
 
           for i in $(seq 1 30); do
-            if docker exec "$MONGO_NAME" mongosh --quiet --eval "db.adminCommand({ ping: 1 })" >/dev/null 2>&1; then
+
+            if docker exec "$MONGO_NAME" \
+              mongosh --quiet \
+              --eval "db.adminCommand({ ping: 1 })" \
+              >/dev/null 2>&1; then
+
               echo "MongoDB is ready on port $MONGO_PORT."
-              echo "MONGODB_URI=mongodb://127.0.0.1:${MONGO_PORT}/?directConnection=true" >> "$GITHUB_ENV"
+
+              echo "MONGODB_URI=mongodb://127.0.0.1:${MONGO_PORT}/?directConnection=true" \
+                >> "$GITHUB_ENV"
+
               exit 0
             fi
+
             sleep 1
+
           done
 
           echo "::error::MongoDB did not become ready."
+
           docker logs "$MONGO_NAME" || true
+
           exit 1
 
       # ============================================================
@@ -795,26 +1023,19 @@ jobs:
           echo "Starting RelataDB"
           echo "========================================"
 
-          # Each run uses a unique Compose project, so each run creates a
-          # bridge network. The self-hosted daemon's address pools fill up
-          # ("all predefined address pools have been fully subnetted") when
-          # earlier runs leave those networks behind.
-          echo "Removing leftover ThreatMap E2E containers"
-          mapfile -t old_containers < <(docker ps -aq --filter "name=threatmap-e2e-" || true)
+          echo "Removing leftover containers for this Compose project prefix"
+
+          mapfile -t old_containers < <(
+            docker ps -aq \
+              --filter "name=threatmap-e2e-" || true
+          )
+
           if [ "${#old_containers[@]}" -gt 0 ]; then
             docker rm -f "${old_containers[@]}" || true
           fi
 
-          echo "Reclaiming unused Docker networks"
-          docker network prune -f || true
-
-          docker compose down -v --remove-orphans || true
-
-          # RelataDB 2.7 refuses RELATA_BEARER_TOKEN through the published
-          # port. A host-usable token is minted from RELATA_ADMIN_TOKEN on
-          # the loopback admin listener. Inject that credential with a
-          # Compose override so docker-compose.yml stays unchanged.
           OVERRIDE="${RUNNER_TEMP}/relatadb-ci.yml"
+
           printf '%s\n' \
             'services:' \
             '  relatadb:' \
@@ -824,8 +1045,27 @@ jobs:
             '      RELATA_DATA_DIR: /data/relata' \
             > "$OVERRIDE"
 
-          echo "COMPOSE_FILE=${GITHUB_WORKSPACE}/docker-compose.yml:${OVERRIDE}" >> "$GITHUB_ENV"
-          export COMPOSE_FILE="${GITHUB_WORKSPACE}/docker-compose.yml:${OVERRIDE}"
+          if [ "$APP_DIR" = "." ]; then
+            COMPOSE_BASE="${GITHUB_WORKSPACE}/docker-compose.yml"
+          else
+            COMPOSE_BASE="${GITHUB_WORKSPACE}/${APP_DIR}/docker-compose.yml"
+          fi
+
+          echo "COMPOSE_FILE=${COMPOSE_BASE}:${OVERRIDE}" >> "$GITHUB_ENV"
+
+          export COMPOSE_FILE="${COMPOSE_BASE}:${OVERRIDE}"
+
+          mapfile -t old_networks < <(
+            docker network ls \
+              --filter "name=threatmap-e2e-" \
+              --format '{{.Name}}' || true
+          )
+
+          if [ "${#old_networks[@]}" -gt 0 ]; then
+            docker network rm "${old_networks[@]}" || true
+          fi
+
+          docker compose down -v --remove-orphans || true
 
           docker compose up -d --force-recreate relatadb
 
@@ -841,9 +1081,9 @@ jobs:
           echo "RelataDB authentication configuration:"
 
           docker inspect "$CONTAINER_ID" \
-            --format '{{range .Config.Env}}{{println .}}{{end}}' \
-            | grep -E '^RELATA_(BEARER_TOKEN|ADMIN_TOKEN)=' \
-            | sed 's/=.*$/=<redacted>/'
+            --format '{{range .Config.Env}}{{println .}}{{end}}' |
+            grep -E '^RELATA_(BEARER_TOKEN|ADMIN_TOKEN)=' |
+            sed 's/=.*$/=<redacted>/'
 
       # ============================================================
       # WAIT FOR RELATABD
@@ -863,20 +1103,29 @@ jobs:
           for i in {1..60}; do
 
             if curl -fsS "$RELATADB_URL/health" >/dev/null 2>&1; then
+
               echo "RelataDB is healthy."
+
               curl -fsS "$RELATADB_URL/health"
+
               echo
+
               exit 0
+
             fi
 
             echo "RelataDB not ready yet ($i/60)..."
 
-            if [ "$i" -eq 10 ] || \
-               [ "$i" -eq 20 ] || \
+            if [ "$i" -eq 10 ] ||
+               [ "$i" -eq 20 ] ||
                [ "$i" -eq 40 ]; then
 
               docker compose ps || true
-              docker compose logs --no-color --tail=50 relatadb || true
+
+              docker compose logs \
+                --no-color \
+                --tail=50 \
+                relatadb || true
 
             fi
 
@@ -887,25 +1136,16 @@ jobs:
           echo "::error::RelataDB did not become healthy within 120 seconds."
 
           docker compose ps || true
-          docker compose logs --no-color --tail=200 relatadb || true
+
+          docker compose logs \
+            --no-color \
+            --tail=200 \
+            relatadb || true
 
           exit 1
 
       # ============================================================
-      # MINT TENANT TOKEN
-      #
-      # RelataDB 2.7.1 treats RELATA_BEARER_TOKEN as loopback-only.
-      # Calling /query on the published port with that bearer returns
-      # 401 {"title":"Unauthorized","detail":"unauthorized"}.
-      #
-      # Mint from inside the container network namespace:
-      #   POST /admin/tokens
-      #   Authorization: Bearer $RELATA_ADMIN_TOKEN
-      #   {"description":"..."}
-      #   response: {"id","secret"}
-      #
-      # Free profile serves /admin on data-plane port 8080. Hardened
-      # server/cluster profiles serve it on 127.0.0.1:9091.
+      # MINT RELATABD TENANT TOKEN
       # ============================================================
 
       - name: Mint RelataDB tenant token
@@ -924,6 +1164,7 @@ jobs:
           echo "========================================"
 
           RESPONSE_FILE="$(mktemp)"
+
           trap 'rm -f "$RESPONSE_FILE"' EXIT
 
           CONTAINER_ID="$(docker compose ps -q relatadb)"
@@ -934,13 +1175,13 @@ jobs:
           fi
 
           ADMIN_TOKEN="$(
-            docker inspect "$CONTAINER_ID" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-              | sed -n 's/^RELATA_ADMIN_TOKEN=//p'
+            docker inspect "$CONTAINER_ID" \
+              --format '{{range .Config.Env}}{{println .}}{{end}}' |
+              sed -n 's/^RELATA_ADMIN_TOKEN=//p'
           )"
 
           if [ -z "$ADMIN_TOKEN" ]; then
             echo "::error::RelataDB container has no RELATA_ADMIN_TOKEN."
-            echo "::error::The published port rejects the bootstrap bearer."
             exit 1
           fi
 
@@ -948,46 +1189,67 @@ jobs:
 
           REQUEST_BODY='{"description":"threatmap playwright"}'
 
-          # Stdout is only the HTTP status. Logs go to stderr.
           mint_at() {
+
             local url="$1"
             local output curl_status http body
 
             set +e
-            if docker exec "$CONTAINER_ID" curl --version >/dev/null 2>&1; then
+
+            if docker exec "$CONTAINER_ID" \
+              curl --version >/dev/null 2>&1; then
+
               output="$(
-                docker exec "$CONTAINER_ID" curl \
-                  -sS --max-time 20 \
-                  -X POST "$url" \
-                  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-                  -H "Content-Type: application/json" \
-                  --data "$REQUEST_BODY" \
-                  -w $'\n%{http_code}'
+                docker exec "$CONTAINER_ID" \
+                  curl \
+                    -sS \
+                    --max-time 20 \
+                    -X POST "$url" \
+                    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    --data "$REQUEST_BODY" \
+                    -w $'\n%{http_code}'
               )"
+
             else
+
               output="$(
-                docker run --rm --network "container:${CONTAINER_ID}" curlimages/curl:8.11.1 \
-                  -sS --max-time 20 \
-                  -X POST "$url" \
-                  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-                  -H "Content-Type: application/json" \
-                  --data "$REQUEST_BODY" \
-                  -w $'\n%{http_code}'
+                docker run \
+                  --rm \
+                  --network "container:${CONTAINER_ID}" \
+                  curlimages/curl:8.11.1 \
+                    -sS \
+                    --max-time 20 \
+                    -X POST "$url" \
+                    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    --data "$REQUEST_BODY" \
+                    -w $'\n%{http_code}'
               )"
+
             fi
+
             curl_status=$?
+
             set -e
 
             if [ "$curl_status" -ne 0 ]; then
+
               echo "Mint unreachable at $url (curl exit $curl_status)." >&2
+
               printf '%s\n' "$output" > "$RESPONSE_FILE"
+
               echo "000"
+
               return 0
+
             fi
 
             http="${output##*$'\n'}"
             body="${output%$'\n'*}"
+
             printf '%s\n' "$body" > "$RESPONSE_FILE"
+
             echo "$http"
           }
 
@@ -997,17 +1259,32 @@ jobs:
             "http://127.0.0.1:8080/admin/tokens" \
             "http://127.0.0.1:9091/admin/tokens"
           do
+
             echo "Trying $endpoint"
+
             HTTP_STATUS="$(mint_at "$endpoint")"
+
             echo "HTTP status: $HTTP_STATUS"
 
-            if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
+            if [ "$HTTP_STATUS" = "200" ] ||
+               [ "$HTTP_STATUS" = "201" ]; then
+
               TOKEN="$(
                 node -e '
                   const fs = require("fs");
+
                   try {
-                    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-                    process.stdout.write(body.secret || body.token || "");
+                    const body =
+                      JSON.parse(
+                        fs.readFileSync(process.argv[1], "utf8")
+                      );
+
+                    process.stdout.write(
+                      body.secret ||
+                      body.token ||
+                      ""
+                    );
+
                   } catch {
                     process.exit(0);
                   }
@@ -1020,25 +1297,31 @@ jobs:
               fi
 
               echo "Mint response did not contain .secret or .token."
+
               TOKEN=""
+
             else
+
               echo "Mint response:"
               cat "$RESPONSE_FILE" || true
               echo
+
             fi
+
           done
 
           if [ -z "$TOKEN" ]; then
+
             echo "::error::RelataDB token minting failed."
             echo "::error::The bootstrap bearer is refused on the published port."
+
             exit 1
+
           fi
 
           echo "::add-mask::$TOKEN"
 
-          {
-            echo "RELATADB_TOKEN=$TOKEN"
-          } >> "$GITHUB_ENV"
+          echo "RELATADB_TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
           echo "RelataDB tenant token configured."
 
@@ -1067,6 +1350,7 @@ jobs:
           fi
 
           RESPONSE_FILE="$(mktemp)"
+
           trap 'rm -f "$RESPONSE_FILE"' EXIT
 
           HTTP_STATUS="$(
@@ -1089,17 +1373,24 @@ jobs:
             echo "::error::RelataDB tenant authentication failed."
             echo "::error::HTTP status: $HTTP_STATUS"
             echo "::error::Response:"
+
             cat "$RESPONSE_FILE"
 
             docker compose ps || true
-            docker compose logs --no-color --tail=200 relatadb || true
+
+            docker compose logs \
+              --no-color \
+              --tail=200 \
+              relatadb || true
 
             exit 1
+
           fi
 
           echo "RelataDB tenant authentication succeeded."
 
           cat "$RESPONSE_FILE"
+
           echo
 
       # ============================================================
@@ -1122,6 +1413,7 @@ jobs:
           case "$VERSION_ID" in
 
             24.04)
+
               packages="fonts-freefont-ttf fonts-ipafont-gothic fonts-liberation \
                 fonts-noto-color-emoji fonts-tlwg-loma-otf fonts-unifont \
                 fonts-wqy-zenhei libasound2t64 libatk-bridge2.0-0t64 \
@@ -1131,9 +1423,11 @@ jobs:
                 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
                 libxfixes3 libxkbcommon0 libxrandr2 xfonts-cyrillic \
                 xfonts-scalable xvfb"
+
               ;;
 
             22.04)
+
               packages="fonts-freefont-ttf fonts-ipafont-gothic fonts-liberation \
                 fonts-noto-color-emoji fonts-tlwg-loma-otf fonts-unifont \
                 fonts-wqy-zenhei libasound2 libatk-bridge2.0-0 \
@@ -1143,18 +1437,27 @@ jobs:
                 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
                 libxfixes3 libxkbcommon0 libxrandr2 xfonts-cyrillic \
                 xfonts-scalable xvfb"
+
               ;;
 
             *)
+
               echo "::error::Unsupported runner OS: $PRETTY_NAME"
               exit 1
+
               ;;
 
           esac
 
-          sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+          sudo apt-get \
+            -o DPkg::Lock::Timeout=300 \
+            update \
+            -qq
 
-          sudo apt-get -o DPkg::Lock::Timeout=300 install -y \
+          sudo apt-get \
+            -o DPkg::Lock::Timeout=300 \
+            install \
+            -y \
             --no-install-recommends \
             $packages
 
@@ -1170,8 +1473,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd "${{ inputs.working_directory }}"
-          npx playwright install "${{ inputs.playwright_browser }}"
+          cd "$APP_DIR"
+
+          case "${{ steps.package-manager.outputs.pm }}" in
+
+            pnpm)
+              pnpm exec playwright install "${{ inputs.playwright_browser }}"
+              ;;
+
+            yarn)
+              yarn playwright install "${{ inputs.playwright_browser }}"
+              ;;
+
+            npm)
+              npx --no-install playwright install "${{ inputs.playwright_browser }}"
+              ;;
+
+            *)
+              echo "::error::Playwright requires a Node package manager in $APP_DIR."
+              exit 1
+              ;;
+
+          esac
 
       # ============================================================
       # RUN PLAYWRIGHT
@@ -1183,19 +1506,6 @@ jobs:
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
         shell: bash
-        env:
-          RELATADB_URL: ${{ env.RELATADB_URL }}
-          RELATADB_REQUIRED: "1"
-          RELATADB_ORG_ID: ${{ env.RELATADB_ORG_ID }}
-          RELATADB_OFFLINE: "0"
-          E2E_PROVISION_LOCAL_ADMIN: "1"
-          PLAYWRIGHT_SERVER_MODE: production
-          PLAYWRIGHT_BASE_URL: http://localhost:3000
-          AUTH_BASE_URL: http://localhost:3000
-          E2E_EXPOSE_VERIFY_URL: "1"
-          WEBAUTHN_RP_ID: localhost
-          WEBAUTHN_ORIGIN: http://localhost:3000
-          MONITOR_SCHEDULER_ENABLED: "false"
         run: |
           set -euo pipefail
 
@@ -1203,16 +1513,72 @@ jobs:
           echo "Running Playwright E2E tests"
           echo "========================================"
 
+          cd "$APP_DIR"
+
+          run_playwright() {
+
+            case "${{ steps.package-manager.outputs.pm }}" in
+
+              pnpm)
+                pnpm exec playwright "$@"
+                ;;
+
+              yarn)
+                yarn playwright "$@"
+                ;;
+
+              npm)
+                npx --no-install playwright "$@"
+                ;;
+
+              *)
+                echo "::error::Playwright requires a Node package manager in $APP_DIR."
+                exit 1
+                ;;
+
+            esac
+
+          }
+
           case "${{ steps.detect-database.outputs.database }}" in
+
             none|mongodb)
-              cd "${{ inputs.working_directory }}"
-              npx playwright test -c "${{ inputs.playwright_config }}"
-              if [ -n "${{ inputs.playwright_extra_config }}" ]; then
-                npx playwright test -c "${{ inputs.playwright_extra_config }}"
+
+              export RELATADB_REQUIRED=0
+
+              run_playwright \
+                test \
+                -c "${{ inputs.playwright_config }}" \
+                "${{ inputs.e2e_test_path }}"
+
+              if [ -n "${{ inputs.secondary_playwright_config }}" ]; then
+
+                run_playwright \
+                  test \
+                  -c "${{ inputs.secondary_playwright_config }}"
+
               fi
+
               exit 0
+
               ;;
+
           esac
+
+          # ========================================================
+          # THREATMAP PRODUCTION E2E
+          # ========================================================
+
+          export RELATADB_REQUIRED=1
+          export RELATADB_OFFLINE=0
+          export E2E_PROVISION_LOCAL_ADMIN=1
+          export PLAYWRIGHT_SERVER_MODE=production
+          export PLAYWRIGHT_BASE_URL=http://localhost:3000
+          export AUTH_BASE_URL=http://localhost:3000
+          export E2E_EXPOSE_VERIFY_URL=1
+          export WEBAUTHN_RP_ID=localhost
+          export WEBAUTHN_ORIGIN=http://localhost:3000
+          export MONITOR_SCHEDULER_ENABLED=false
 
           if [ -z "${RELATADB_TOKEN:-}" ]; then
             echo "::error::RELATADB_TOKEN was not minted."
@@ -1224,17 +1590,26 @@ jobs:
             exit 1
           fi
 
-          # ADR-014 | local API key. Pattern: tm_live_ plus at least 20 token chars.
           export THREATMAP_DEV_API_KEY="tm_live_$(openssl rand -hex 24)"
           export THREATMAP_VAULT_KEY="$(openssl rand -hex 32)"
+
           echo "::add-mask::$THREATMAP_DEV_API_KEY"
           echo "::add-mask::$THREATMAP_VAULT_KEY"
 
           JWT_KEY_DIR="$(mktemp -d)"
-          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
-            -out "$JWT_KEY_DIR/private.pem" >/dev/null 2>&1
-          openssl pkey -in "$JWT_KEY_DIR/private.pem" -pubout \
-            -out "$JWT_KEY_DIR/public.pem" >/dev/null 2>&1
+
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:2048 \
+            -out "$JWT_KEY_DIR/private.pem" \
+            >/dev/null 2>&1
+
+          openssl pkey \
+            -in "$JWT_KEY_DIR/private.pem" \
+            -pubout \
+            -out "$JWT_KEY_DIR/public.pem" \
+            >/dev/null 2>&1
+
           export AUTH_JWT_PRIVATE_KEY="$(cat "$JWT_KEY_DIR/private.pem")"
           export AUTH_JWT_PUBLIC_KEY="$(cat "$JWT_KEY_DIR/public.pem")"
 
@@ -1245,40 +1620,99 @@ jobs:
           echo "E2E provisioning: $E2E_PROVISION_LOCAL_ADMIN"
           echo "Playwright server: production"
 
-          # Production login refuses to run without REDIS_URL
-          # (auth.redis.configuration_missing → HTTP 503).
+          # ========================================================
+          # START REDIS
+          # ========================================================
+
           REDIS_NAME="threatmap-e2e-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
           docker rm -f "$REDIS_NAME" >/dev/null 2>&1 || true
-          docker run -d --name "$REDIS_NAME" -p "127.0.0.1::6379" redis:7-alpine
+
+          docker run \
+            -d \
+            --name "$REDIS_NAME" \
+            -p "127.0.0.1::6379" \
+            redis:7-alpine
+
           echo "THREATMAP_CI_REDIS_NAME=$REDIS_NAME" >> "$GITHUB_ENV"
 
-          REDIS_PORT="$(docker port "$REDIS_NAME" 6379/tcp | awk -F: 'NR==1 { print $NF }')"
+          REDIS_PORT="$(
+            docker port "$REDIS_NAME" 6379/tcp |
+            awk -F: 'NR==1 { print $NF }'
+          )"
+
           if [ -z "$REDIS_PORT" ]; then
             echo "::error::Redis did not publish a host port."
             exit 1
           fi
+
           export REDIS_URL="redis://127.0.0.1:${REDIS_PORT}"
 
           for i in $(seq 1 30); do
-            if docker exec "$REDIS_NAME" redis-cli ping 2>/dev/null | grep -q PONG; then
+
+            if docker exec "$REDIS_NAME" \
+              redis-cli ping 2>/dev/null |
+              grep -q PONG; then
+
               echo "Redis is ready on port $REDIS_PORT."
+
               break
+
             fi
+
             if [ "$i" -eq 30 ]; then
+
               echo "::error::Redis did not become ready."
+
               docker logs "$REDIS_NAME" || true
+
               exit 1
+
             fi
+
             sleep 1
+
           done
 
           curl -fsS "$RELATADB_URL/health"
 
           echo
-          echo "Building production server for Playwright"
-          pnpm build
 
-          npx playwright test \
+          # ========================================================
+          # BUILD PRODUCTION SERVER
+          # ========================================================
+
+          echo "Building production server for Playwright"
+
+          cd "$APP_DIR"
+
+          case "${{ steps.package-manager.outputs.pm }}" in
+
+            pnpm)
+              pnpm build
+              ;;
+
+            yarn)
+              yarn build
+              ;;
+
+            npm)
+              npm run build
+              ;;
+
+            *)
+              echo "::error::Playwright requires a Node package manager in $APP_DIR."
+              exit 1
+              ;;
+
+          esac
+
+          # ========================================================
+          # RUN PLAYWRIGHT
+          # ========================================================
+
+          run_playwright \
+            test \
             -c "${{ inputs.playwright_config }}" \
             "${{ inputs.e2e_test_path }}"
 
@@ -1298,8 +1732,8 @@ jobs:
         with:
           name: playwright-report
           path: |
-            playwright-report/
-            test-results/
+            ${{ inputs.working_directory }}/playwright-report/
+            ${{ inputs.working_directory }}/test-results/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -1329,87 +1763,16 @@ jobs:
           echo "RelataDB logs"
           echo "========================================"
 
-          docker compose logs --no-color --tail=300 relatadb || true
-
-      # ============================================================
-      # RUN NODE UNIT TESTS
-      # ============================================================
-
-      - name: Run custom unit command
-        if: |
-          inputs.unit_command != '' &&
-          (
-            steps.mode.outputs.mode == 'unit' ||
-            steps.mode.outputs.mode == 'both'
-          )
-        working-directory: ${{ inputs.working_directory }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ${{ inputs.unit_command }}
-
-      - name: Run Node unit tests
-        id: node-unit-tests
-        if: |
-          always() &&
-          inputs.unit_command == '' &&
-          steps.unit-package-manager.outputs.type == 'node'
-        shell: bash
-        env:
-          UNIT_PATH: ${{ inputs.unit_test_path }}
-          UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
-        run: |
-          set -euo pipefail
-
-          if [ "$UNIT_LOCATION" = "nested" ]; then
-            cd "$UNIT_PATH"
-          fi
-
-          case "${{ steps.unit-package-manager.outputs.pm }}" in
-            pnpm)
-              pnpm test
-              ;;
-            yarn)
-              yarn test
-              ;;
-            npm)
-              npm test
-              ;;
-            *)
-              echo "::error::Unsupported unit-test package manager."
-              exit 1
-              ;;
-          esac
-
-      # ============================================================
-      # RUN PYTHON UNIT TESTS
-      # ============================================================
-
-      - name: Run Python unit tests
-        id: python-unit-tests
-        if: |
-          always() &&
-          inputs.unit_command == '' &&
-          steps.unit-package-manager.outputs.type == 'python'
-        shell: bash
-        env:
-          UNIT_PATH: ${{ inputs.unit_test_path }}
-          UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
-        run: |
-          set -euo pipefail
-
-          if [ "$UNIT_LOCATION" = "nested" ]; then
-            cd "$UNIT_PATH"
-            python -m pytest .
-          else
-            python -m pytest "$UNIT_PATH"
-          fi
+          docker compose logs \
+            --no-color \
+            --tail=300 \
+            relatadb || true
 
       # ============================================================
       # CLEAN UP RELATABD
       # ============================================================
 
-      - name: Stop RelataDB
+      - name: Cleanup E2E infrastructure
         if: |
           always() &&
           steps.detect-database.outputs.database == 'relatadb' &&
@@ -1433,6 +1796,10 @@ jobs:
 
           echo "RelataDB cleanup completed."
 
+      # ============================================================
+      # CLEAN UP MONGODB
+      # ============================================================
+
       - name: Stop MongoDB
         if: |
           always() &&
@@ -1440,6 +1807,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           if [ -n "${CI_MONGO_NAME:-}" ]; then
             docker rm -f "$CI_MONGO_NAME" || true
           fi
@@ -1459,12 +1827,18 @@ jobs:
           PLAYWRIGHT_RESULT="${{ steps.playwright-tests.outcome }}"
           NODE_UNIT_RESULT="${{ steps.node-unit-tests.outcome }}"
           PYTHON_UNIT_RESULT="${{ steps.python-unit-tests.outcome }}"
+          CUSTOM_UNIT_RESULT="${{ steps.custom-unit-tests.outcome }}"
           UNIT_TEST_TYPE="${{ steps.unit-package-manager.outputs.type }}"
 
           PLAYWRIGHT_RESULT="${PLAYWRIGHT_RESULT:-not-run}"
           NODE_UNIT_RESULT="${NODE_UNIT_RESULT:-not-run}"
           PYTHON_UNIT_RESULT="${PYTHON_UNIT_RESULT:-not-run}"
+          CUSTOM_UNIT_RESULT="${CUSTOM_UNIT_RESULT:-not-run}"
           UNIT_TEST_TYPE="${UNIT_TEST_TYPE:-not-detected}"
+
+          if [ -n "${{ inputs.unit_command }}" ]; then
+            UNIT_TEST_TYPE="custom"
+          fi
 
           echo "========================================"
           echo "Quality Gate Summary"
@@ -1492,22 +1866,37 @@ jobs:
               case "$UNIT_TEST_TYPE" in
 
                 node)
+
                   if [ "$NODE_UNIT_RESULT" != "success" ]; then
                     echo "::error::Node unit test quality gate failed."
                     exit 1
                   fi
+
                   ;;
 
                 python)
+
                   if [ "$PYTHON_UNIT_RESULT" != "success" ]; then
                     echo "::error::Python unit test quality gate failed."
                     exit 1
                   fi
+
+                  ;;
+
+                custom)
+
+                  if [ "$CUSTOM_UNIT_RESULT" != "success" ]; then
+                    echo "::error::Custom unit command quality gate failed."
+                    exit 1
+                  fi
+
                   ;;
 
                 *)
+
                   echo "::error::No valid unit-test runner was detected."
                   exit 1
+
                   ;;
 
               esac
@@ -1526,22 +1915,37 @@ jobs:
               case "$UNIT_TEST_TYPE" in
 
                 node)
+
                   if [ "$NODE_UNIT_RESULT" != "success" ]; then
                     echo "::error::Node unit test quality gate failed."
                     GATE_FAILED=true
                   fi
+
                   ;;
 
                 python)
+
                   if [ "$PYTHON_UNIT_RESULT" != "success" ]; then
                     echo "::error::Python unit test quality gate failed."
                     GATE_FAILED=true
                   fi
+
+                  ;;
+
+                custom)
+
+                  if [ "$CUSTOM_UNIT_RESULT" != "success" ]; then
+                    echo "::error::Custom unit command quality gate failed."
+                    GATE_FAILED=true
+                  fi
+
                   ;;
 
                 *)
+
                   echo "::error::No valid unit-test runner was detected."
                   GATE_FAILED=true
+
                   ;;
 
               esac
@@ -1553,8 +1957,10 @@ jobs:
               ;;
 
             *)
+
               echo "::error::Unknown quality gate mode: $MODE"
               exit 1
+
               ;;
 
           esac
