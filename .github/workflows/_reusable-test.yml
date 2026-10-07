@@ -623,8 +623,23 @@ jobs:
 
           docker compose down -v --remove-orphans || true
 
-          # Job env RELATADB_TOKEN is what Compose already interpolates
-          # into RELATA_BEARER_TOKEN. The Compose file is unchanged.
+          # RelataDB 2.7 refuses RELATA_BEARER_TOKEN through the published
+          # port. A host-usable token is minted from RELATA_ADMIN_TOKEN on
+          # the loopback admin listener. Inject that credential with a
+          # Compose override so docker-compose.yml stays unchanged.
+          OVERRIDE="${RUNNER_TEMP}/relatadb-ci.yml"
+          printf '%s\n' \
+            'services:' \
+            '  relatadb:' \
+            '    environment:' \
+            '      RELATA_ADMIN_TOKEN: threatmap-admin' \
+            '      RELATA_KMS_LOCAL_DEV: "true"' \
+            '      RELATA_DATA_DIR: /data/relata' \
+            > "$OVERRIDE"
+
+          echo "COMPOSE_FILE=${GITHUB_WORKSPACE}/docker-compose.yml:${OVERRIDE}" >> "$GITHUB_ENV"
+          export COMPOSE_FILE="${GITHUB_WORKSPACE}/docker-compose.yml:${OVERRIDE}"
+
           docker compose up -d --force-recreate relatadb
 
           docker compose ps
@@ -687,20 +702,23 @@ jobs:
           exit 1
 
       # ============================================================
-      # CONFIGURE TENANT TOKEN
+      # MINT TENANT TOKEN
       #
-      # ThreatMap Compose already sets:
-      #   RELATA_BEARER_TOKEN=${RELATADB_TOKEN:-threatmap-default}
+      # RelataDB 2.7.1 treats RELATA_BEARER_TOKEN as loopback-only.
+      # Calling /query on the published port with that bearer returns
+      # 401 {"title":"Unauthorized","detail":"unauthorized"}.
       #
-      # There is no host mint route on that service. The previous step
-      # POSTed to ${RELATADB_URL}/<YOUR_EXISTING_TOKEN_ENDPOINT>. The
-      # raw angle brackets make that URI illegal, so RelataDB returns
-      # HTTP 400 with an empty body.
+      # Mint from inside the container network namespace:
+      #   POST /admin/tokens
+      #   Authorization: Bearer $RELATA_ADMIN_TOKEN
+      #   {"description":"..."}
+      #   response: {"id","secret"}
       #
-      # Use the same bearer the container was started with.
+      # Free profile serves /admin on data-plane port 8080. Hardened
+      # server/cluster profiles serve it on 127.0.0.1:9091.
       # ============================================================
 
-      - name: Configure RelataDB tenant token
+      - name: Mint RelataDB tenant token
         if: |
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
@@ -709,8 +727,11 @@ jobs:
           set -euo pipefail
 
           echo "========================================"
-          echo "Configuring RelataDB tenant token"
+          echo "Minting RelataDB tenant token"
           echo "========================================"
+
+          RESPONSE_FILE="$(mktemp)"
+          trap 'rm -f "$RESPONSE_FILE"' EXIT
 
           CONTAINER_ID="$(docker compose ps -q relatadb)"
 
@@ -719,13 +740,104 @@ jobs:
             exit 1
           fi
 
-          TOKEN="$(
+          ADMIN_TOKEN="$(
             docker inspect "$CONTAINER_ID" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-              | sed -n 's/^RELATA_BEARER_TOKEN=//p'
+              | sed -n 's/^RELATA_ADMIN_TOKEN=//p'
           )"
 
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "::error::RelataDB container has no RELATA_ADMIN_TOKEN."
+            echo "::error::The published port rejects the bootstrap bearer."
+            exit 1
+          fi
+
+          echo "::add-mask::$ADMIN_TOKEN"
+
+          REQUEST_BODY='{"description":"threatmap playwright"}'
+
+          # Stdout is only the HTTP status. Logs go to stderr.
+          mint_at() {
+            local url="$1"
+            local output curl_status http body
+
+            set +e
+            if docker exec "$CONTAINER_ID" curl --version >/dev/null 2>&1; then
+              output="$(
+                docker exec "$CONTAINER_ID" curl \
+                  -sS --max-time 20 \
+                  -X POST "$url" \
+                  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+                  -H "Content-Type: application/json" \
+                  --data "$REQUEST_BODY" \
+                  -w $'\n%{http_code}'
+              )"
+            else
+              output="$(
+                docker run --rm --network "container:${CONTAINER_ID}" curlimages/curl:8.11.1 \
+                  -sS --max-time 20 \
+                  -X POST "$url" \
+                  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+                  -H "Content-Type: application/json" \
+                  --data "$REQUEST_BODY" \
+                  -w $'\n%{http_code}'
+              )"
+            fi
+            curl_status=$?
+            set -e
+
+            if [ "$curl_status" -ne 0 ]; then
+              echo "Mint unreachable at $url (curl exit $curl_status)." >&2
+              printf '%s\n' "$output" > "$RESPONSE_FILE"
+              echo "000"
+              return 0
+            fi
+
+            http="${output##*$'\n'}"
+            body="${output%$'\n'*}"
+            printf '%s\n' "$body" > "$RESPONSE_FILE"
+            echo "$http"
+          }
+
+          TOKEN=""
+
+          for endpoint in \
+            "http://127.0.0.1:8080/admin/tokens" \
+            "http://127.0.0.1:9091/admin/tokens"
+          do
+            echo "Trying $endpoint"
+            HTTP_STATUS="$(mint_at "$endpoint")"
+            echo "HTTP status: $HTTP_STATUS"
+
+            if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
+              TOKEN="$(
+                node -e '
+                  const fs = require("fs");
+                  try {
+                    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                    process.stdout.write(body.secret || body.token || "");
+                  } catch {
+                    process.exit(0);
+                  }
+                ' "$RESPONSE_FILE"
+              )"
+
+              if [ -n "$TOKEN" ]; then
+                echo "RelataDB registry token minted."
+                break
+              fi
+
+              echo "Mint response did not contain .secret or .token."
+              TOKEN=""
+            else
+              echo "Mint response:"
+              cat "$RESPONSE_FILE" || true
+              echo
+            fi
+          done
+
           if [ -z "$TOKEN" ]; then
-            echo "::error::RelataDB container has no RELATA_BEARER_TOKEN."
+            echo "::error::RelataDB token minting failed."
+            echo "::error::The bootstrap bearer is refused on the published port."
             exit 1
           fi
 
@@ -735,7 +847,7 @@ jobs:
             echo "RELATADB_TOKEN=$TOKEN"
           } >> "$GITHUB_ENV"
 
-          echo "RelataDB bearer token matches the running container."
+          echo "RelataDB tenant token configured."
 
       # ============================================================
       # VERIFY RELATABD AUTHENTICATION
@@ -876,10 +988,17 @@ jobs:
         shell: bash
         env:
           RELATADB_URL: ${{ env.RELATADB_URL }}
-          RELATADB_TOKEN: ${{ env.RELATADB_TOKEN }}
           RELATADB_REQUIRED: "1"
           RELATADB_ORG_ID: ${{ env.RELATADB_ORG_ID }}
+          RELATADB_OFFLINE: "0"
           E2E_PROVISION_LOCAL_ADMIN: "1"
+          PLAYWRIGHT_SERVER_MODE: production
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          AUTH_BASE_URL: http://localhost:3000
+          E2E_EXPOSE_VERIFY_URL: "1"
+          WEBAUTHN_RP_ID: localhost
+          WEBAUTHN_ORIGIN: http://localhost:3000
+          MONITOR_SCHEDULER_ENABLED: "false"
         run: |
           set -euo pipefail
 
@@ -887,15 +1006,42 @@ jobs:
           echo "Running Playwright E2E tests"
           echo "========================================"
 
+          if [ -z "${RELATADB_TOKEN:-}" ]; then
+            echo "::error::RELATADB_TOKEN was not minted."
+            exit 1
+          fi
+
+          if ! command -v openssl >/dev/null 2>&1; then
+            echo "::error::openssl is required to create local E2E credentials."
+            exit 1
+          fi
+
+          # ADR-014 | local API key. Pattern: tm_live_ plus at least 20 token chars.
+          export THREATMAP_DEV_API_KEY="tm_live_$(openssl rand -hex 24)"
+          export THREATMAP_VAULT_KEY="$(openssl rand -hex 32)"
+          echo "::add-mask::$THREATMAP_DEV_API_KEY"
+          echo "::add-mask::$THREATMAP_VAULT_KEY"
+
+          JWT_KEY_DIR="$(mktemp -d)"
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+            -out "$JWT_KEY_DIR/private.pem" >/dev/null 2>&1
+          openssl pkey -in "$JWT_KEY_DIR/private.pem" -pubout \
+            -out "$JWT_KEY_DIR/public.pem" >/dev/null 2>&1
+          export AUTH_JWT_PRIVATE_KEY="$(cat "$JWT_KEY_DIR/private.pem")"
+          export AUTH_JWT_PUBLIC_KEY="$(cat "$JWT_KEY_DIR/public.pem")"
+
           echo "RelataDB URL: $RELATADB_URL"
           echo "RelataDB organization: $RELATADB_ORG_ID"
           echo "RelataDB token: configured"
           echo "RelataDB required: $RELATADB_REQUIRED"
           echo "E2E provisioning: $E2E_PROVISION_LOCAL_ADMIN"
+          echo "Playwright server: production"
 
           curl -fsS "$RELATADB_URL/health"
 
           echo
+          echo "Building production server for Playwright"
+          pnpm build
 
           npx playwright test \
             -c "${{ inputs.playwright_config }}" \
