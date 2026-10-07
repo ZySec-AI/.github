@@ -292,6 +292,10 @@ jobs:
           echo "Unit test path:  $UNIT_PATH"
           echo "========================================"
 
+          # ========================================================
+          # NESTED NODE PROJECT
+          # ========================================================
+
           if [ -f "$UNIT_PATH/package.json" ]; then
 
             PM="$(detect_node_pm "$UNIT_PATH")"
@@ -314,6 +318,10 @@ jobs:
             exit 0
           fi
 
+          # ========================================================
+          # NESTED PYTHON PROJECT
+          # ========================================================
+
           if [ -f "$UNIT_PATH/pytest.ini" ] || \
              [ -f "$UNIT_PATH/pyproject.toml" ] || \
              [ -f "$UNIT_PATH/requirements.txt" ]; then
@@ -327,6 +335,10 @@ jobs:
 
             exit 0
           fi
+
+          # ========================================================
+          # ROOT NODE PROJECT
+          # ========================================================
 
           if [ -f "$ROOT_DIR/package.json" ]; then
 
@@ -355,6 +367,10 @@ jobs:
             exit 0
           fi
 
+          # ========================================================
+          # ROOT PYTHON PROJECT
+          # ========================================================
+
           if [ -f "$ROOT_DIR/pytest.ini" ] || \
              [ -f "$ROOT_DIR/pyproject.toml" ] || \
              [ -f "$ROOT_DIR/requirements.txt" ]; then
@@ -369,6 +385,10 @@ jobs:
 
             exit 0
           fi
+
+          # ========================================================
+          # NOTHING DETECTED
+          # ========================================================
 
           echo "::error::Unable to detect unit-test runner."
           echo "::error::Checked:"
@@ -476,6 +496,8 @@ jobs:
 
       # ============================================================
       # INSTALL ROOT NODE DEPENDENCIES
+      #
+      # Git token is available ONLY during installation.
       # ============================================================
 
       - name: Install root Node dependencies
@@ -558,6 +580,8 @@ jobs:
 
       # ============================================================
       # INSTALL NODE UNIT-TEST DEPENDENCIES
+      #
+      # Only used when unit tests are a separate nested Node project.
       # ============================================================
 
       - name: Install Node unit-test dependencies
@@ -640,11 +664,140 @@ jobs:
           echo "Playwright tests found under: $E2E_PATH"
 
       # ============================================================
+      # START RELATABD FOR LOCAL PLAYWRIGHT E2E
+      #
+      # The repository root docker-compose.yml provides:
+      #
+      #   host localhost:9090
+      #       -> relatadb container :8080
+      #
+      # We start ONLY RelataDB because Playwright's webServer
+      # configuration is responsible for starting the Next.js app.
+      #
+      # A fresh volume is used so E2E tests do not inherit stale
+      # data from a previous run on the shared self-hosted runner.
+      # ============================================================
+
+      - name: Start RelataDB
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Starting RelataDB for Playwright E2E"
+          echo "========================================"
+
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "::error::Docker is not installed or not available on this runner."
+            exit 1
+          fi
+
+          docker --version
+          docker compose version
+
+          echo "Cleaning previous E2E containers and volumes..."
+
+          docker compose down -v --remove-orphans || true
+
+          echo "Starting RelataDB..."
+
+          docker compose up -d relatadb
+
+          echo "========================================"
+          echo "Docker Compose status"
+          echo "========================================"
+
+          docker compose ps
+
+      # ============================================================
+      # WAIT FOR RELATABD
+      # ============================================================
+
+      - name: Wait for RelataDB
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Waiting for RelataDB"
+          echo "Endpoint: http://localhost:9090/health"
+          echo "========================================"
+
+          for i in {1..60}; do
+
+            if curl -fsS http://localhost:9090/health >/dev/null 2>&1; then
+              echo "RelataDB is ready."
+
+              echo "RelataDB health response:"
+              curl -fsS http://localhost:9090/health
+
+              echo
+              exit 0
+            fi
+
+            echo "RelataDB not ready yet ($i/60)..."
+
+            if [ "$i" -eq 10 ] || [ "$i" -eq 20 ] || [ "$i" -eq 40 ]; then
+              echo "Current RelataDB status:"
+              docker compose ps relatadb || true
+            fi
+
+            sleep 2
+
+          done
+
+          echo "::error::RelataDB did not become ready within 120 seconds."
+
+          echo "========================================"
+          echo "Docker Compose status"
+          echo "========================================"
+
+          docker compose ps || true
+
+          echo "========================================"
+          echo "RelataDB logs"
+          echo "========================================"
+
+          docker compose logs --no-color relatadb || true
+
+          exit 1
+
+      # ============================================================
+      # VERIFY RELATABD FROM RUNNER
+      # ============================================================
+
+      - name: Verify RelataDB endpoint
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking RelataDB from the GitHub runner..."
+
+          curl -fsS http://localhost:9090/health
+
+          echo
+          echo "RelataDB is reachable from localhost:9090."
+
+      # ============================================================
       # INSTALL PLAYWRIGHT OS DEPENDENCIES
       #
-      # Self-hosted runner sudo policy does not allow Playwright's
-      # internal sudo shell invocation. Install the required packages
-      # directly with the runner's permitted sudo apt-get command.
+      # Do NOT use:
+      #
+      #   npx playwright install-deps chromium
+      #
+      # because the self-hosted runner's sudo configuration rejects
+      # Playwright's sudo invocation.
+      #
+      # Install the required packages directly using sudo apt-get.
       # ============================================================
 
       - name: Install Playwright OS dependencies
@@ -660,7 +813,11 @@ jobs:
 
           . /etc/os-release
 
-          echo "Runner OS: $PRETTY_NAME"
+          echo "========================================"
+          echo "Runner OS"
+          echo "========================================"
+
+          echo "$PRETTY_NAME"
 
           case "$VERSION_ID" in
 
@@ -682,71 +839,27 @@ jobs:
                 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 \
                 libfontconfig1 libfreetype6 libgbm1 libglib2.0-0 libnspr4 libnss3 \
                 libpango-1.0-0 libwayland-client0 libx11-6 libxcb1 \
-                libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
-                libxrandr2 xfonts-cyrillic xfonts-scalable xvfb"
+                libxcomposite1 libxdamage1 libxext6 libxfixes3 \
+                libxkbcommon0 libxrandr2 xfonts-cyrillic xfonts-scalable xvfb"
               ;;
 
             *)
-              echo "::error::No Playwright dependency list for $PRETTY_NAME."
-              echo "::error::Generate one from:"
-              echo "::error::npx playwright install-deps --dry-run chromium"
+              echo "::error::Unsupported runner OS: $PRETTY_NAME"
+              echo "::error::Add a Playwright dependency list for this Ubuntu release."
               exit 1
               ;;
 
           esac
 
-          echo "Checking Playwright Chromium OS dependencies..."
+          echo "Installing/verifying Playwright Chromium dependencies..."
 
           # shellcheck disable=SC2086
-          count="$(echo $packages | wc -w)"
+          sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
 
           # shellcheck disable=SC2086
-          installed="$(
-            dpkg-query \
-              -W \
-              -f='${Status}\n' \
-              $packages 2>/dev/null |
-              grep -c "install ok installed" || true
-          )"
-
-          if [ "$installed" = "$count" ]; then
-            echo "Playwright Chromium libraries already installed ($count packages)."
-            exit 0
-          fi
-
-          echo "Installed packages: $installed / $count"
-          echo "Installing missing Playwright Chromium libraries..."
-
-          for attempt in 1 2 3; do
-
-            echo "apt installation attempt $attempt/3"
-
-            # shellcheck disable=SC2086
-            if sudo apt-get \
-              -o DPkg::Lock::Timeout=300 \
-              update -qq \
-              &&
-              sudo apt-get \
-                -o DPkg::Lock::Timeout=300 \
-                install \
-                -y \
-                --no-install-recommends \
-                $packages
-            then
-              echo "Playwright OS dependencies installed successfully."
-              exit 0
-            fi
-
-            echo "::warning::apt installation attempt $attempt failed."
-
-            if [ "$attempt" -lt 3 ]; then
-              sleep 20
-            fi
-
-          done
-
-          echo "::error::Failed to install Playwright OS dependencies."
-          exit 1
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y \
+            --no-install-recommends \
+            $packages
 
       # ============================================================
       # INSTALL PLAYWRIGHT BROWSER
@@ -763,121 +876,23 @@ jobs:
           npx playwright install "${{ inputs.playwright_browser }}"
 
       # ============================================================
-      # START RELATADB
+      # RUN PLAYWRIGHT
       #
-      # Playwright global-setup requires:
+      # Playwright starts the Next.js application using the webServer
+      # configured in playwright.config.ts.
+      #
+      # RelataDB is already running at:
       #
       #   http://localhost:9090
       #
-      # RelataDB is expected to be defined as a Docker Compose
-      # service named "relatadb".
-      # ============================================================
-
-      - name: Start RelataDB
-        if: |
-          steps.mode.outputs.mode == 'playwright' ||
-          steps.mode.outputs.mode == 'both'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "========================================"
-          echo "Starting RelataDB"
-          echo "========================================"
-
-          if ! command -v docker >/dev/null 2>&1; then
-            echo "::error::Docker is not installed on the self-hosted runner."
-            exit 1
-          fi
-
-          if ! docker compose version >/dev/null 2>&1; then
-            echo "::error::Docker Compose is not available on the self-hosted runner."
-            exit 1
-          fi
-
-          if ! docker compose config >/dev/null 2>&1; then
-            echo "::error::Docker Compose configuration is invalid or unavailable."
-            docker compose config || true
-            exit 1
-          fi
-
-          echo "Docker Compose configuration:"
-          docker compose config --services
-
-          if ! docker compose config --services | grep -qx "relatadb"; then
-            echo "::error::Docker Compose service 'relatadb' was not found."
-            echo "::error::Expected a service named 'relatadb'."
-            exit 1
-          fi
-
-          docker compose up -d relatadb
-
-          echo "Docker Compose status:"
-          docker compose ps
-
-          echo "Waiting for RelataDB health endpoint..."
-
-          for i in {1..60}; do
-
-            if curl \
-              -fsS \
-              --max-time 5 \
-              http://localhost:9090/health \
-              >/dev/null 2>&1
-            then
-              echo "RelataDB is ready."
-              exit 0
-            fi
-
-            echo "RelataDB not ready yet ($i/60)."
-            sleep 2
-
-          done
-
-          echo "::error::RelataDB did not become ready within 120 seconds."
-
-          echo "========================================"
-          echo "Docker Compose status"
-          echo "========================================"
-
-          docker compose ps || true
-
-          echo "========================================"
-          echo "RelataDB logs"
-          echo "========================================"
-
-          docker compose logs relatadb --tail=200 || true
-
-          exit 1
-
-      # ============================================================
-      # VERIFY RELATADB
-      # ============================================================
-
-      - name: Verify RelataDB
-        if: |
-          steps.mode.outputs.mode == 'playwright' ||
-          steps.mode.outputs.mode == 'both'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Checking RelataDB..."
-
-          RESPONSE="$(
-            curl \
-              --fail \
-              --silent \
-              --show-error \
-              --max-time 10 \
-              http://localhost:9090/health
-          )"
-
-          echo "RelataDB health response:"
-          echo "$RESPONSE"
-
-      # ============================================================
-      # RUN PLAYWRIGHT
+      # global-setup.ts can therefore:
+      #
+      #   findUserByEmail()
+      #   registerUser()
+      #   verifyEmailToken()
+      #   registerApiKey()
+      #   getBalance()
+      #   grantCredits()
       # ============================================================
 
       - name: Run Playwright E2E tests
@@ -885,13 +900,26 @@ jobs:
         if: |
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
+        shell: bash
         env:
           RELATADB_URL: http://localhost:9090
           RELATADB_TOKEN: threatmap-default
           RELATADB_REQUIRED: "1"
-        shell: bash
+          E2E_PROVISION_LOCAL_ADMIN: "1"
         run: |
           set -euo pipefail
+
+          echo "========================================"
+          echo "Running Playwright E2E tests"
+          echo "========================================"
+
+          echo "RelataDB URL: $RELATADB_URL"
+
+          echo "Checking RelataDB before starting Playwright..."
+
+          curl -fsS "$RELATADB_URL/health"
+
+          echo
 
           npx playwright test \
             -c "${{ inputs.playwright_config }}" \
@@ -917,6 +945,33 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+      # ============================================================
+      # SHOW RELATABD LOGS ON FAILURE
+      # ============================================================
+
+      - name: Show RelataDB logs on failure
+        if: |
+          failure() &&
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "RelataDB container status"
+          echo "========================================"
+
+          docker compose ps || true
+
+          echo "========================================"
+          echo "RelataDB logs"
+          echo "========================================"
+
+          docker compose logs --no-color relatadb || true
 
       # ============================================================
       # RUN NODE UNIT TESTS
@@ -987,6 +1042,32 @@ jobs:
           else
             python -m pytest "$UNIT_PATH"
           fi
+
+      # ============================================================
+      # CLEAN UP RELATABD
+      #
+      # Always remove the container and volume because these are
+      # isolated E2E resources on a shared self-hosted runner.
+      # ============================================================
+
+      - name: Stop RelataDB
+        if: |
+          always() &&
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Stopping RelataDB"
+          echo "========================================"
+
+          docker compose down -v --remove-orphans
+
+          echo "RelataDB cleanup completed."
 
       # ============================================================
       # FINAL QUALITY GATE
