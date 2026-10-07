@@ -70,27 +70,14 @@ jobs:
 
     env:
       # ============================================================
-      # E2E / RELATABD CONFIGURATION
-      #
-      # Keep these values identical between:
-      #
-      #   Docker Compose -> RelataDB
-      #
-      # and:
-      #
-      #   Next.js / Playwright -> RelataDB
-      #
-      # This prevents the 401 Unauthorized problem where the
-      # container is healthy but the application uses a different
-      # bearer token.
+      # RELATABD
       # ============================================================
 
       RELATADB_URL: http://localhost:9090
       RELATADB_TOKEN: threatmap-default
       RELATADB_REQUIRED: "1"
 
-      # Give every GitHub Actions run its own Compose project.
-      # This is important because the runner is shared/reused.
+      # Give each GitHub Actions attempt its own Compose project.
       COMPOSE_PROJECT_NAME: threatmap-e2e-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
@@ -130,6 +117,7 @@ jobs:
 
           echo "========================================"
           echo "Test Configuration"
+          echo "========================================"
           echo "Mode:                 $MODE"
           echo "Unit test path:       ${{ inputs.unit_test_path }}"
           echo "E2E test path:        ${{ inputs.e2e_test_path }}"
@@ -139,6 +127,7 @@ jobs:
           echo "Playwright browser:   ${{ inputs.playwright_browser }}"
           echo "RelataDB URL:         $RELATADB_URL"
           echo "Compose project:      $COMPOSE_PROJECT_NAME"
+          echo "RelataDB token:       configured"
           echo "========================================"
 
       # ============================================================
@@ -157,18 +146,14 @@ jobs:
 
           if [ -f pnpm-lock.yaml ]; then
             PM="pnpm"
-
           elif [ -f yarn.lock ]; then
             PM="yarn"
-
           elif [ -f package-lock.json ]; then
             PM="npm"
-
           elif [ -f package.json ]; then
             echo "::error::package.json exists but no lockfile was found."
             echo "::error::CI requires pnpm-lock.yaml, yarn.lock, or package-lock.json."
             exit 1
-
           else
             echo "::error::No supported Node package configuration found."
             exit 1
@@ -300,13 +285,10 @@ jobs:
 
             if [ -f "$DIR/pnpm-lock.yaml" ]; then
               echo "pnpm"
-
             elif [ -f "$DIR/yarn.lock" ]; then
               echo "yarn"
-
             elif [ -f "$DIR/package-lock.json" ]; then
               echo "npm"
-
             else
               echo ""
             fi
@@ -324,7 +306,6 @@ jobs:
 
             if [ -z "$PM" ]; then
               echo "::error::Node unit-test project found at '$UNIT_PATH', but no lockfile was found."
-              echo "::error::Expected pnpm-lock.yaml, yarn.lock, or package-lock.json."
               exit 1
             fi
 
@@ -335,7 +316,6 @@ jobs:
             echo "Unit-test type: Node"
             echo "Unit-test package manager: $PM"
             echo "Unit-test location: nested"
-            echo "Package: $UNIT_PATH/package.json"
 
             exit 0
           fi
@@ -364,7 +344,6 @@ jobs:
 
             if [ -z "$PM" ]; then
               echo "::error::Root package.json exists but no lockfile was found."
-              echo "::error::Expected pnpm-lock.yaml, yarn.lock, or package-lock.json."
               exit 1
             fi
 
@@ -375,8 +354,6 @@ jobs:
             echo "Unit-test type: Node"
             echo "Unit-test package manager: $PM"
             echo "Unit-test location: root"
-            echo "Package: $ROOT_DIR/package.json"
-            echo "Test cases: $UNIT_PATH"
 
             exit 0
           fi
@@ -391,7 +368,6 @@ jobs:
 
             echo "Unit-test type: Python"
             echo "Unit-test location: root"
-            echo "Test cases: $UNIT_PATH"
 
             exit 0
           fi
@@ -470,8 +446,7 @@ jobs:
 
       - name: Detect Python unit tests
         id: python-tests
-        if: |
-          steps.unit-package-manager.outputs.type == 'python'
+        if: steps.unit-package-manager.outputs.type == 'python'
         shell: bash
         run: |
           set -euo pipefail
@@ -508,24 +483,19 @@ jobs:
           set -euo pipefail
 
           case "${{ steps.package-manager.outputs.pm }}" in
-
             pnpm)
               pnpm install --frozen-lockfile
               ;;
-
             yarn)
               yarn install --immutable
               ;;
-
             npm)
               npm ci
               ;;
-
             *)
               echo "::error::Unsupported package manager."
               exit 1
               ;;
-
           esac
 
       # ============================================================
@@ -549,13 +519,10 @@ jobs:
 
           if [ -f requirements.txt ]; then
             python -m pip install -r requirements.txt
-
           elif [ -f pyproject.toml ]; then
             python -m pip install -e .
-
           elif [ -f pytest.ini ]; then
             python -m pip install pytest
-
           else
             echo "::error::No supported Python dependency configuration found."
             exit 1
@@ -582,24 +549,19 @@ jobs:
           cd "$UNIT_PATH"
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
-
             pnpm)
               pnpm install --frozen-lockfile
               ;;
-
             yarn)
               yarn install --immutable
               ;;
-
             npm)
               npm ci
               ;;
-
             *)
               echo "::error::Unsupported unit-test package manager."
               exit 1
               ;;
-
           esac
 
       # ============================================================
@@ -669,19 +631,20 @@ jobs:
       #
       # IMPORTANT:
       #
-      # docker-compose.yml contains:
+      # docker-compose.yml must contain:
       #
-      #   RELATA_BEARER_TOKEN=${RELATADB_TOKEN:-threatmap-default}
+      # services:
+      #   relatadb:
+      #     environment:
+      #       RELATA_BEARER_TOKEN: ${RELATADB_TOKEN}
       #
-      # The job-level RELATADB_TOKEN is therefore explicitly supplied
-      # to Docker Compose.
+      # This workflow supplies:
       #
-      # The application later uses the SAME:
+      # RELATADB_TOKEN=threatmap-default
       #
-      #   RELATADB_TOKEN=threatmap-default
+      # Therefore the container must receive:
       #
-      # This fixes the previous situation where /health worked but
-      # authenticated /ingest returned 401.
+      # RELATA_BEARER_TOKEN=threatmap-default
       # ============================================================
 
       - name: Start RelataDB
@@ -689,6 +652,8 @@ jobs:
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
         shell: bash
+        env:
+          RELATADB_TOKEN: threatmap-default
         run: |
           set -euo pipefail
 
@@ -698,26 +663,60 @@ jobs:
 
           echo "Compose project: $COMPOSE_PROJECT_NAME"
           echo "RelataDB URL:    $RELATADB_URL"
+          echo "RelataDB token:  configured"
 
-          echo "Cleaning only this E2E Compose project..."
+          echo "========================================"
+          echo "Stopping previous stack"
+          echo "========================================"
 
           docker compose \
             -p "$COMPOSE_PROJECT_NAME" \
             down -v --remove-orphans || true
 
-          echo "Starting RelataDB..."
+          echo "========================================"
+          echo "Starting RelataDB"
+          echo "========================================"
 
           docker compose \
             -p "$COMPOSE_PROJECT_NAME" \
-            up -d relatadb
+            up -d --force-recreate relatadb
 
           echo "========================================"
-          echo "Docker Compose status"
+          echo "Compose status"
           echo "========================================"
 
           docker compose \
             -p "$COMPOSE_PROJECT_NAME" \
             ps
+
+          CONTAINER_ID="$(
+            docker compose \
+              -p "$COMPOSE_PROJECT_NAME" \
+              ps -q relatadb
+          )"
+
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "::error::RelataDB container was not created."
+            exit 1
+          fi
+
+          echo "========================================"
+          echo "RelataDB container authentication config"
+          echo "========================================"
+
+          if ! docker inspect "$CONTAINER_ID" \
+            --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep '^RELATA_BEARER_TOKEN=' \
+            | sed 's/=.*$/=<redacted>/'; then
+
+            echo "::error::RELATA_BEARER_TOKEN is not present in the RelataDB container."
+            echo "::error::Check docker-compose.yml."
+            echo "::error::Expected:"
+            echo "::error::  RELATA_BEARER_TOKEN: \${RELATADB_TOKEN}"
+            exit 1
+          fi
+
+          echo "RelataDB container started successfully."
 
       # ============================================================
       # WAIT FOR RELATABD
@@ -735,61 +734,70 @@ jobs:
           echo "Waiting for RelataDB"
           echo "========================================"
 
+          READY=false
+
           for i in {1..60}; do
 
             if curl -fsS "$RELATADB_URL/health" >/dev/null 2>&1; then
-              echo "RelataDB is ready."
-
-              echo "RelataDB health response:"
-              curl -fsS "$RELATADB_URL/health"
-
-              echo
-              exit 0
+              READY=true
+              echo "RelataDB is healthy."
+              break
             fi
 
             echo "RelataDB not ready yet ($i/60)..."
 
             if [ "$i" -eq 10 ] || [ "$i" -eq 20 ] || [ "$i" -eq 40 ]; then
-              echo "Current RelataDB status:"
+
+              echo "========================================"
+              echo "RelataDB status"
+              echo "========================================"
 
               docker compose \
                 -p "$COMPOSE_PROJECT_NAME" \
-                ps relatadb || true
+                ps || true
+
+              echo "========================================"
+              echo "Recent RelataDB logs"
+              echo "========================================"
+
+              docker compose \
+                -p "$COMPOSE_PROJECT_NAME" \
+                logs --no-color --tail=50 relatadb || true
             fi
 
             sleep 2
-
           done
 
-          echo "::error::RelataDB did not become ready within 120 seconds."
+          if [ "$READY" != "true" ]; then
+            echo "::error::RelataDB did not become healthy within 120 seconds."
+
+            docker compose \
+              -p "$COMPOSE_PROJECT_NAME" \
+              ps || true
+
+            docker compose \
+              -p "$COMPOSE_PROJECT_NAME" \
+              logs --no-color --tail=200 relatadb || true
+
+            exit 1
+          fi
 
           echo "========================================"
-          echo "Docker Compose status"
+          echo "RelataDB health response"
           echo "========================================"
 
-          docker compose \
-            -p "$COMPOSE_PROJECT_NAME" \
-            ps || true
+          curl -fsS "$RELATADB_URL/health"
 
-          echo "========================================"
-          echo "RelataDB logs"
-          echo "========================================"
-
-          docker compose \
-            -p "$COMPOSE_PROJECT_NAME" \
-            logs --no-color relatadb || true
-
-          exit 1
+          echo
 
       # ============================================================
       # VERIFY RELATABD AUTHENTICATION
       #
-      # /health does not prove that the bearer token is correct.
+      # This verifies that the token supplied to the application
+      # can authenticate against RelataDB.
       #
-      # This verifies that the application token can authenticate
-      # against RelataDB before Playwright starts.
-      #
-      # We intentionally do not print the token.
+      # NOTE:
+      # The endpoint/header combination should match lib/db.ts.
       # ============================================================
 
       - name: Verify RelataDB authentication
@@ -797,6 +805,9 @@ jobs:
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
         shell: bash
+        env:
+          RELATADB_URL: http://localhost:9090
+          RELATADB_TOKEN: threatmap-default
         run: |
           set -euo pipefail
 
@@ -804,23 +815,30 @@ jobs:
           echo "Verifying RelataDB authentication"
           echo "========================================"
 
-          if curl -fsS \
-            -X POST \
-            -H "Authorization: Bearer ${RELATADB_TOKEN}" \
-            -H "X-Organization-Id: threatmap" \
-            -H "Content-Type: application/json" \
-            --data '{"sql":"SELECT 1"}' \
-            "$RELATADB_URL/query" >/tmp/relatadb-auth-response.json; then
+          RESPONSE_FILE="$(mktemp)"
 
-            echo "RelataDB authentication succeeded."
+          HTTP_STATUS="$(
+            curl \
+              -sS \
+              -o "$RESPONSE_FILE" \
+              -w "%{http_code}" \
+              -X POST \
+              "$RELATADB_URL/query" \
+              -H "Authorization: Bearer $RELATADB_TOKEN" \
+              -H "X-Organization-Id: threatmap" \
+              -H "Content-Type: application/json" \
+              --data '{"sql":"SELECT 1"}'
+          )"
 
-            echo "Response:"
-            cat /tmp/relatadb-auth-response.json
+          echo "RelataDB query HTTP status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+
+            echo "::error::RelataDB rejected the configured bearer token."
+            echo "::error::HTTP status: $HTTP_STATUS"
+            echo "::error::Response:"
+            cat "$RESPONSE_FILE"
             echo
-
-          else
-
-            echo "::error::RelataDB health endpoint is reachable, but authenticated API access failed."
 
             echo "========================================"
             echo "RelataDB container status"
@@ -838,8 +856,14 @@ jobs:
               -p "$COMPOSE_PROJECT_NAME" \
               logs --no-color --tail=200 relatadb || true
 
+            rm -f "$RESPONSE_FILE"
+
             exit 1
           fi
+
+          echo "Authenticated RelataDB query succeeded."
+
+          rm -f "$RESPONSE_FILE"
 
       # ============================================================
       # INSTALL PLAYWRIGHT OS DEPENDENCIES
@@ -892,7 +916,6 @@ jobs:
               echo "::error::Unsupported runner OS: $PRETTY_NAME"
               exit 1
               ;;
-
           esac
 
           echo "Installing/verifying Playwright Chromium dependencies..."
@@ -920,22 +943,23 @@ jobs:
       # ============================================================
       # RUN PLAYWRIGHT E2E TESTS
       #
-      # Job-level environment variables are inherited by:
+      # There is intentionally only ONE Playwright invocation.
+      #
+      # Job-level env is inherited by:
       #
       #   npx playwright
       #       |
       #       +-- Playwright webServer
       #               |
       #               +-- Next.js
+      #                       |
+      #                       +-- lib/db.ts
       #
-      # Therefore Next.js/lib/db.ts receives:
+      # Therefore Next.js receives:
       #
       #   RELATADB_URL=http://localhost:9090
       #   RELATADB_TOKEN=threatmap-default
       #   RELATADB_REQUIRED=1
-      #
-      # This is the same token used when Docker Compose created
-      # the RelataDB container.
       # ============================================================
 
       - name: Run Playwright E2E tests
@@ -1016,7 +1040,7 @@ jobs:
 
           docker compose \
             -p "$COMPOSE_PROJECT_NAME" \
-            logs --no-color relatadb || true
+            logs --no-color --tail=300 relatadb || true
 
       # ============================================================
       # RUN NODE UNIT TESTS
@@ -1043,24 +1067,19 @@ jobs:
           echo "Path: $UNIT_PATH"
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
-
             pnpm)
               pnpm test
               ;;
-
             yarn)
               yarn test
               ;;
-
             npm)
               npm test
               ;;
-
             *)
               echo "::error::Unsupported unit-test package manager."
               exit 1
               ;;
-
           esac
 
       # ============================================================
@@ -1107,7 +1126,7 @@ jobs:
 
           docker compose \
             -p "$COMPOSE_PROJECT_NAME" \
-            down -v --remove-orphans
+            down -v --remove-orphans || true
 
           echo "RelataDB cleanup completed."
 
@@ -1135,6 +1154,7 @@ jobs:
 
           echo "========================================"
           echo "Quality Gate Summary"
+          echo "========================================"
           echo "Mode:               $MODE"
           echo "Playwright result:  $PLAYWRIGHT_RESULT"
           echo "Node unit result:   $NODE_UNIT_RESULT"
