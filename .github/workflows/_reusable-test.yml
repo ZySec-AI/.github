@@ -71,13 +71,27 @@ jobs:
     env:
       # ============================================================
       # RELATABD
+      #
+      # IMPORTANT:
+      #
+      # RELATA_BEARER_TOKEN is the RelataDB bootstrap token.
+      # It is NOT the token used by the application for /query
+      # or /ingest.
+      #
+      # RELATADB_TOKEN will be populated later with a tenant-scoped
+      # token minted from /admin/tokens.
       # ============================================================
 
       RELATADB_URL: http://localhost:9090
-      RELATADB_TOKEN: threatmap-default
+      RELATA_BEARER_TOKEN: threatmap-bootstrap
+      RELATA_ADMIN_TOKEN: threatmap-admin
+
       RELATADB_REQUIRED: "1"
 
-      # Give each GitHub Actions attempt its own Compose project.
+      # Tenant used by the E2E application.
+      RELATADB_ORG_ID: threatmap
+
+      # Unique Compose project for this GitHub Actions run.
       COMPOSE_PROJECT_NAME: threatmap-e2e-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
@@ -118,16 +132,16 @@ jobs:
           echo "========================================"
           echo "Test Configuration"
           echo "========================================"
-          echo "Mode:                 $MODE"
-          echo "Unit test path:       ${{ inputs.unit_test_path }}"
-          echo "E2E test path:        ${{ inputs.e2e_test_path }}"
-          echo "Playwright config:    ${{ inputs.playwright_config }}"
-          echo "Node version:         ${{ inputs.node_version }}"
-          echo "Python version:       ${{ inputs.python_version }}"
-          echo "Playwright browser:   ${{ inputs.playwright_browser }}"
-          echo "RelataDB URL:         $RELATADB_URL"
-          echo "Compose project:      $COMPOSE_PROJECT_NAME"
-          echo "RelataDB token:       configured"
+          echo "Mode:               $MODE"
+          echo "Unit test path:     ${{ inputs.unit_test_path }}"
+          echo "E2E test path:      ${{ inputs.e2e_test_path }}"
+          echo "Playwright config:  ${{ inputs.playwright_config }}"
+          echo "Node version:       ${{ inputs.node_version }}"
+          echo "Python version:     ${{ inputs.python_version }}"
+          echo "Playwright browser: ${{ inputs.playwright_browser }}"
+          echo "RelataDB URL:       $RELATADB_URL"
+          echo "RelataDB org:       $RELATADB_ORG_ID"
+          echo "Compose project:    $COMPOSE_PROJECT_NAME"
           echo "========================================"
 
       # ============================================================
@@ -152,7 +166,6 @@ jobs:
             PM="npm"
           elif [ -f package.json ]; then
             echo "::error::package.json exists but no lockfile was found."
-            echo "::error::CI requires pnpm-lock.yaml, yarn.lock, or package-lock.json."
             exit 1
           else
             echo "::error::No supported Node package configuration found."
@@ -190,8 +203,6 @@ jobs:
 
           corepack enable
 
-          echo "Corepack enabled."
-
       # ============================================================
       # DETECT ROOT PNPM VERSION
       # ============================================================
@@ -202,11 +213,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          if [ ! -f package.json ]; then
-            echo "::error::package.json is required for pnpm."
-            exit 1
-          fi
 
           VERSION="$(
             node -pe '
@@ -223,8 +229,6 @@ jobs:
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          echo "Using root pnpm version: $VERSION"
 
       # ============================================================
       # SETUP ROOT PNPM
@@ -256,7 +260,6 @@ jobs:
             exit 1
           fi
 
-          echo "Unit tests found under: $UNIT_PATH"
           echo "present=true" >> "$GITHUB_OUTPUT"
 
       # ============================================================
@@ -294,12 +297,6 @@ jobs:
             fi
           }
 
-          echo "========================================"
-          echo "Detecting unit-test runner"
-          echo "Repository root: $ROOT_DIR"
-          echo "Unit test path:  $UNIT_PATH"
-          echo "========================================"
-
           if [ -f "$UNIT_PATH/package.json" ]; then
 
             PM="$(detect_node_pm "$UNIT_PATH")"
@@ -313,10 +310,6 @@ jobs:
             echo "pm=$PM" >> "$GITHUB_OUTPUT"
             echo "location=nested" >> "$GITHUB_OUTPUT"
 
-            echo "Unit-test type: Node"
-            echo "Unit-test package manager: $PM"
-            echo "Unit-test location: nested"
-
             exit 0
           fi
 
@@ -327,9 +320,6 @@ jobs:
             echo "type=python" >> "$GITHUB_OUTPUT"
             echo "pm=python" >> "$GITHUB_OUTPUT"
             echo "location=nested" >> "$GITHUB_OUTPUT"
-
-            echo "Unit-test type: Python"
-            echo "Unit-test location: nested"
 
             exit 0
           fi
@@ -351,10 +341,6 @@ jobs:
             echo "pm=$PM" >> "$GITHUB_OUTPUT"
             echo "location=root" >> "$GITHUB_OUTPUT"
 
-            echo "Unit-test type: Node"
-            echo "Unit-test package manager: $PM"
-            echo "Unit-test location: root"
-
             exit 0
           fi
 
@@ -365,9 +351,6 @@ jobs:
             echo "type=python" >> "$GITHUB_OUTPUT"
             echo "pm=python" >> "$GITHUB_OUTPUT"
             echo "location=root" >> "$GITHUB_OUTPUT"
-
-            echo "Unit-test type: Python"
-            echo "Unit-test location: root"
 
             exit 0
           fi
@@ -389,9 +372,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          UNIT_PATH="${{ inputs.unit_test_path }}"
-
-          cd "$UNIT_PATH"
+          cd "${{ inputs.unit_test_path }}"
 
           VERSION="$(
             node -pe '
@@ -407,8 +388,6 @@ jobs:
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          echo "Using unit-test pnpm version: $VERSION"
 
       # ============================================================
       # SETUP UNIT PNPM
@@ -435,10 +414,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           corepack enable
-
-          echo "Unit-test Yarn enabled."
 
       # ============================================================
       # DETECT PYTHON UNIT TESTS
@@ -452,8 +428,6 @@ jobs:
           set -euo pipefail
 
           echo "present=true" >> "$GITHUB_OUTPUT"
-
-          echo "Python unit-test configuration detected."
 
       # ============================================================
       # SETUP PYTHON
@@ -544,9 +518,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          UNIT_PATH="${{ inputs.unit_test_path }}"
-
-          cd "$UNIT_PATH"
+          cd "${{ inputs.unit_test_path }}"
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
             pnpm)
@@ -583,8 +555,6 @@ jobs:
             exit 1
           fi
 
-          echo "Using Playwright configuration: $CONFIG"
-
       # ============================================================
       # VERIFY E2E TEST DIRECTORY
       # ============================================================
@@ -604,8 +574,6 @@ jobs:
             exit 1
           fi
 
-          echo "Playwright tests found under: $E2E_PATH"
-
       # ============================================================
       # VERIFY DOCKER
       # ============================================================
@@ -618,10 +586,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! command -v docker >/dev/null 2>&1; then
-            echo "::error::Docker is not installed or not available on this runner."
+          command -v docker >/dev/null 2>&1 || {
+            echo "::error::Docker is not available."
             exit 1
-          fi
+          }
 
           docker --version
           docker compose version
@@ -629,22 +597,11 @@ jobs:
       # ============================================================
       # START RELATABD
       #
-      # IMPORTANT:
+      # RELATA_BEARER_TOKEN:
+      #   bootstrap credential
       #
-      # docker-compose.yml must contain:
-      #
-      # services:
-      #   relatadb:
-      #     environment:
-      #       RELATA_BEARER_TOKEN: ${RELATADB_TOKEN}
-      #
-      # This workflow supplies:
-      #
-      # RELATADB_TOKEN=threatmap-default
-      #
-      # Therefore the container must receive:
-      #
-      # RELATA_BEARER_TOKEN=threatmap-default
+      # RELATA_ADMIN_TOKEN:
+      #   admin credential used to mint tenant token
       # ============================================================
 
       - name: Start RelataDB
@@ -653,7 +610,8 @@ jobs:
           steps.mode.outputs.mode == 'both'
         shell: bash
         env:
-          RELATADB_TOKEN: threatmap-default
+          RELATA_BEARER_TOKEN: threatmap-bootstrap
+          RELATA_ADMIN_TOKEN: threatmap-admin
         run: |
           set -euo pipefail
 
@@ -661,39 +619,26 @@ jobs:
           echo "Starting RelataDB"
           echo "========================================"
 
-          echo "Compose project: $COMPOSE_PROJECT_NAME"
-          echo "RelataDB URL:    $RELATADB_URL"
-          echo "RelataDB token:  configured"
+          docker compose down -v --remove-orphans || true
 
-          echo "========================================"
-          echo "Stopping previous stack"
-          echo "========================================"
+          # These variables are deliberately exported because the
+          # docker-compose.yml is expected to reference them as:
+          #
+          #   RELATA_BEARER_TOKEN
+          #   RELATA_ADMIN_TOKEN
+          #
+          export RELATA_BEARER_TOKEN
+          export RELATA_ADMIN_TOKEN
 
-          docker compose \
-            -p "$COMPOSE_PROJECT_NAME" \
-            down -v --remove-orphans || true
-
-          echo "========================================"
-          echo "Starting RelataDB"
-          echo "========================================"
-
-          docker compose \
-            -p "$COMPOSE_PROJECT_NAME" \
-            up -d --force-recreate relatadb
+          docker compose up -d --force-recreate relatadb
 
           echo "========================================"
           echo "Compose status"
           echo "========================================"
 
-          docker compose \
-            -p "$COMPOSE_PROJECT_NAME" \
-            ps
+          docker compose ps
 
-          CONTAINER_ID="$(
-            docker compose \
-              -p "$COMPOSE_PROJECT_NAME" \
-              ps -q relatadb
-          )"
+          CONTAINER_ID="$(docker compose ps -q relatadb)"
 
           if [ -z "$CONTAINER_ID" ]; then
             echo "::error::RelataDB container was not created."
@@ -701,22 +646,13 @@ jobs:
           fi
 
           echo "========================================"
-          echo "RelataDB container authentication config"
+          echo "RelataDB authentication configuration"
           echo "========================================"
 
-          if ! docker inspect "$CONTAINER_ID" \
+          docker inspect "$CONTAINER_ID" \
             --format '{{range .Config.Env}}{{println .}}{{end}}' \
-            | grep '^RELATA_BEARER_TOKEN=' \
-            | sed 's/=.*$/=<redacted>/'; then
-
-            echo "::error::RELATA_BEARER_TOKEN is not present in the RelataDB container."
-            echo "::error::Check docker-compose.yml."
-            echo "::error::Expected:"
-            echo "::error::  RELATA_BEARER_TOKEN: \${RELATADB_TOKEN}"
-            exit 1
-          fi
-
-          echo "RelataDB container started successfully."
+            | grep -E '^RELATA_(BEARER_TOKEN|ADMIN_TOKEN)=' \
+            | sed 's/=.*$/=<redacted>/'
 
       # ============================================================
       # WAIT FOR RELATABD
@@ -734,70 +670,143 @@ jobs:
           echo "Waiting for RelataDB"
           echo "========================================"
 
-          READY=false
-
           for i in {1..60}; do
 
             if curl -fsS "$RELATADB_URL/health" >/dev/null 2>&1; then
-              READY=true
               echo "RelataDB is healthy."
-              break
+              curl -fsS "$RELATADB_URL/health"
+              echo
+              exit 0
             fi
 
             echo "RelataDB not ready yet ($i/60)..."
 
             if [ "$i" -eq 10 ] || [ "$i" -eq 20 ] || [ "$i" -eq 40 ]; then
-
-              echo "========================================"
-              echo "RelataDB status"
-              echo "========================================"
-
-              docker compose \
-                -p "$COMPOSE_PROJECT_NAME" \
-                ps || true
-
-              echo "========================================"
-              echo "Recent RelataDB logs"
-              echo "========================================"
-
-              docker compose \
-                -p "$COMPOSE_PROJECT_NAME" \
-                logs --no-color --tail=50 relatadb || true
+              docker compose ps || true
+              docker compose logs --no-color --tail=50 relatadb || true
             fi
 
             sleep 2
           done
 
-          if [ "$READY" != "true" ]; then
-            echo "::error::RelataDB did not become healthy within 120 seconds."
+          echo "::error::RelataDB did not become healthy within 120 seconds."
 
-            docker compose \
-              -p "$COMPOSE_PROJECT_NAME" \
-              ps || true
+          docker compose ps || true
+          docker compose logs --no-color --tail=200 relatadb || true
 
-            docker compose \
-              -p "$COMPOSE_PROJECT_NAME" \
-              logs --no-color --tail=200 relatadb || true
+          exit 1
 
+      # ============================================================
+      # MINT TENANT-SCOPED RELATABD TOKEN
+      #
+      # THIS IS THE IMPORTANT FIX.
+      #
+      # RELATA_BEARER_TOKEN is NOT valid for /query or /ingest.
+      #
+      # We mint a real tenant token using RELATA_ADMIN_TOKEN.
+      #
+      # The admin listener is loopback-only, so the request is made
+      # from inside the RelataDB container.
+      # ============================================================
+
+      - name: Mint RelataDB tenant token
+        id: relatadb-token
+        if: |
+          steps.mode.outputs.mode == 'playwright' ||
+          steps.mode.outputs.mode == 'both'
+        shell: bash
+        env:
+          RELATA_ADMIN_TOKEN: threatmap-admin
+          RELATADB_ORG_ID: threatmap
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Minting RelataDB tenant token"
+          echo "========================================"
+
+          CONTAINER_ID="$(docker compose ps -q relatadb)"
+
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "::error::RelataDB container was not found."
             exit 1
           fi
 
-          echo "========================================"
-          echo "RelataDB health response"
-          echo "========================================"
+          RESPONSE_FILE="$(mktemp)"
 
-          curl -fsS "$RELATADB_URL/health"
+          docker exec \
+            -e RELATA_ADMIN_TOKEN="$RELATA_ADMIN_TOKEN" \
+            "$CONTAINER_ID" \
+            sh -c '
+              curl -fsS \
+                -X POST \
+                http://127.0.0.1:9091/admin/tokens \
+                -H "Authorization: Bearer ${RELATA_ADMIN_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "{\"description\":\"github-actions-e2e\",\"tenant_id\":\"${RELATADB_ORG_ID}\"}"
+            ' > "$RESPONSE_FILE"
 
-          echo
+          echo "RelataDB token endpoint responded."
+
+          cat "$RESPONSE_FILE"
+
+          TOKEN="$(
+            python - "$RESPONSE_FILE" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          token = (
+              data.get("token")
+              or data.get("secret")
+              or data.get("access_token")
+          )
+
+          if not token:
+              raise SystemExit(
+                  "No tenant token found in RelataDB response. "
+                  f"Response keys: {list(data.keys())}"
+              )
+
+          print(token)
+          PY
+          )"
+
+          rm -f "$RESPONSE_FILE"
+
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RelataDB returned an empty tenant token."
+            exit 1
+          fi
+
+          case "$TOKEN" in
+            rlt_*)
+              ;;
+            *)
+              echo "::error::RelataDB returned an unexpected token format."
+              exit 1
+              ;;
+          esac
+
+          # Persist the generated tenant token for subsequent steps.
+          echo "RELATADB_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+          # Also expose it as a masked GitHub Actions secret.
+          echo "::add-mask::$TOKEN"
+
+          echo "Tenant token successfully minted."
+          echo "Token format: rlt_***"
 
       # ============================================================
       # VERIFY RELATABD AUTHENTICATION
       #
-      # This verifies that the token supplied to the application
-      # can authenticate against RelataDB.
+      # Use the MINTED TENANT TOKEN.
       #
-      # NOTE:
-      # The endpoint/header combination should match lib/db.ts.
+      # DO NOT use RELATA_BEARER_TOKEN here.
       # ============================================================
 
       - name: Verify RelataDB authentication
@@ -805,15 +814,17 @@ jobs:
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
         shell: bash
-        env:
-          RELATADB_URL: http://localhost:9090
-          RELATADB_TOKEN: threatmap-default
         run: |
           set -euo pipefail
 
           echo "========================================"
-          echo "Verifying RelataDB authentication"
+          echo "Verifying RelataDB tenant authentication"
           echo "========================================"
+
+          if [ -z "${RELATADB_TOKEN:-}" ]; then
+            echo "::error::RELATADB_TOKEN was not created."
+            exit 1
+          fi
 
           RESPONSE_FILE="$(mktemp)"
 
@@ -825,7 +836,7 @@ jobs:
               -X POST \
               "$RELATADB_URL/query" \
               -H "Authorization: Bearer $RELATADB_TOKEN" \
-              -H "X-Organization-Id: threatmap" \
+              -H "X-Organization-Id: $RELATADB_ORG_ID" \
               -H "Content-Type: application/json" \
               --data '{"sql":"SELECT 1"}'
           )"
@@ -833,35 +844,33 @@ jobs:
           echo "RelataDB query HTTP status: $HTTP_STATUS"
 
           if [ "$HTTP_STATUS" != "200" ]; then
-
-            echo "::error::RelataDB rejected the configured bearer token."
+            echo "::error::RelataDB tenant authentication failed."
             echo "::error::HTTP status: $HTTP_STATUS"
             echo "::error::Response:"
             cat "$RESPONSE_FILE"
             echo
 
             echo "========================================"
-            echo "RelataDB container status"
+            echo "RelataDB status"
             echo "========================================"
 
-            docker compose \
-              -p "$COMPOSE_PROJECT_NAME" \
-              ps || true
+            docker compose ps || true
 
             echo "========================================"
             echo "RelataDB logs"
             echo "========================================"
 
-            docker compose \
-              -p "$COMPOSE_PROJECT_NAME" \
-              logs --no-color --tail=200 relatadb || true
+            docker compose logs --no-color --tail=200 relatadb || true
 
             rm -f "$RESPONSE_FILE"
 
             exit 1
           fi
 
-          echo "Authenticated RelataDB query succeeded."
+          echo "RelataDB tenant authentication succeeded."
+
+          cat "$RESPONSE_FILE"
+          echo
 
           rm -f "$RESPONSE_FILE"
 
@@ -882,43 +891,34 @@ jobs:
 
           . /etc/os-release
 
-          echo "========================================"
-          echo "Runner OS"
-          echo "========================================"
-
-          echo "$PRETTY_NAME"
-
           case "$VERSION_ID" in
-
             24.04)
               packages="fonts-freefont-ttf fonts-ipafont-gothic fonts-liberation \
                 fonts-noto-color-emoji fonts-tlwg-loma-otf fonts-unifont \
-                fonts-wqy-zenhei libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 \
-                libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 \
-                libfontconfig1 libfreetype6 libgbm1 libglib2.0-0t64 libnspr4 libnss3 \
-                libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 \
-                libxext6 libxfixes3 libxkbcommon0 libxrandr2 xfonts-cyrillic \
+                fonts-wqy-zenhei libasound2t64 libatk-bridge2.0-0t64 \
+                libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 \
+                libdbus-1-3 libdrm2 libfontconfig1 libfreetype6 libgbm1 \
+                libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 \
+                libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
+                libxfixes3 libxkbcommon0 libxrandr2 xfonts-cyrillic \
                 xfonts-scalable xvfb"
               ;;
-
             22.04)
               packages="fonts-freefont-ttf fonts-ipafont-gothic fonts-liberation \
                 fonts-noto-color-emoji fonts-tlwg-loma-otf fonts-unifont \
-                fonts-wqy-zenhei libasound2 libatk-bridge2.0-0 libatk1.0-0 \
-                libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 \
-                libfontconfig1 libfreetype6 libgbm1 libglib2.0-0 libnspr4 libnss3 \
-                libpango-1.0-0 libwayland-client0 libx11-6 libxcb1 \
-                libxcomposite1 libxdamage1 libxext6 libxfixes3 \
-                libxkbcommon0 libxrandr2 xfonts-cyrillic xfonts-scalable xvfb"
+                fonts-wqy-zenhei libasound2 libatk-bridge2.0-0 \
+                libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 \
+                libdrm2 libfontconfig1 libfreetype6 libgbm1 libglib2.0-0 \
+                libnspr4 libnss3 libpango-1.0-0 libwayland-client0 \
+                libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
+                libxfixes3 libxkbcommon0 libxrandr2 xfonts-cyrillic \
+                xfonts-scalable xvfb"
               ;;
-
             *)
               echo "::error::Unsupported runner OS: $PRETTY_NAME"
               exit 1
               ;;
           esac
-
-          echo "Installing/verifying Playwright Chromium dependencies..."
 
           sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
 
@@ -941,25 +941,9 @@ jobs:
           npx playwright install "${{ inputs.playwright_browser }}"
 
       # ============================================================
-      # RUN PLAYWRIGHT E2E TESTS
+      # RUN PLAYWRIGHT
       #
-      # There is intentionally only ONE Playwright invocation.
-      #
-      # Job-level env is inherited by:
-      #
-      #   npx playwright
-      #       |
-      #       +-- Playwright webServer
-      #               |
-      #               +-- Next.js
-      #                       |
-      #                       +-- lib/db.ts
-      #
-      # Therefore Next.js receives:
-      #
-      #   RELATADB_URL=http://localhost:9090
-      #   RELATADB_TOKEN=threatmap-default
-      #   RELATADB_REQUIRED=1
+      # RELATADB_TOKEN is now the minted tenant token.
       # ============================================================
 
       - name: Run Playwright E2E tests
@@ -968,6 +952,12 @@ jobs:
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
         shell: bash
+        env:
+          RELATADB_URL: http://localhost:9090
+          RELATADB_TOKEN: ${{ env.RELATADB_TOKEN }}
+          RELATADB_REQUIRED: "1"
+          RELATADB_ORG_ID: threatmap
+          E2E_PROVISION_LOCAL_ADMIN: "1"
         run: |
           set -euo pipefail
 
@@ -976,15 +966,18 @@ jobs:
           echo "========================================"
 
           echo "RelataDB URL: $RELATADB_URL"
+          echo "RelataDB organization: $RELATADB_ORG_ID"
           echo "RelataDB token: configured"
           echo "RelataDB required: $RELATADB_REQUIRED"
-          echo "E2E provisioning: 1"
+          echo "E2E provisioning: $E2E_PROVISION_LOCAL_ADMIN"
 
-          echo "Checking RelataDB before starting Playwright..."
+          echo "Checking RelataDB health..."
 
           curl -fsS "$RELATADB_URL/health"
 
           echo
+
+          echo "Starting Playwright..."
 
           npx playwright test \
             -c "${{ inputs.playwright_config }}" \
@@ -1030,17 +1023,13 @@ jobs:
           echo "RelataDB container status"
           echo "========================================"
 
-          docker compose \
-            -p "$COMPOSE_PROJECT_NAME" \
-            ps || true
+          docker compose ps || true
 
           echo "========================================"
           echo "RelataDB logs"
           echo "========================================"
 
-          docker compose \
-            -p "$COMPOSE_PROJECT_NAME" \
-            logs --no-color --tail=300 relatadb || true
+          docker compose logs --no-color --tail=300 relatadb || true
 
       # ============================================================
       # RUN NODE UNIT TESTS
@@ -1061,10 +1050,6 @@ jobs:
           if [ "$UNIT_LOCATION" = "nested" ]; then
             cd "$UNIT_PATH"
           fi
-
-          echo "Running Node unit tests"
-          echo "Location: $UNIT_LOCATION"
-          echo "Path: $UNIT_PATH"
 
           case "${{ steps.unit-package-manager.outputs.pm }}" in
             pnpm)
@@ -1124,9 +1109,7 @@ jobs:
           echo "Stopping RelataDB"
           echo "========================================"
 
-          docker compose \
-            -p "$COMPOSE_PROJECT_NAME" \
-            down -v --remove-orphans || true
+          docker compose down -v --remove-orphans || true
 
           echo "RelataDB cleanup completed."
 
@@ -1170,7 +1153,6 @@ jobs:
                 echo "::error::Playwright quality gate failed."
                 exit 1
               fi
-
               ;;
 
             unit)
@@ -1197,7 +1179,6 @@ jobs:
                   ;;
 
               esac
-
               ;;
 
             both)
@@ -1235,7 +1216,6 @@ jobs:
               if [ "$GATE_FAILED" = "true" ]; then
                 exit 1
               fi
-
               ;;
 
             *)
