@@ -710,14 +710,10 @@ jobs:
       # ============================================================
 
       - name: Mint RelataDB tenant token
-        id: relatadb-token
-        if: |
-          steps.mode.outputs.mode == 'playwright' ||
-          steps.mode.outputs.mode == 'both'
         shell: bash
         env:
-          RELATA_ADMIN_TOKEN: threatmap-admin
-          RELATADB_ORG_ID: threatmap
+          RELATADB_URL: http://localhost:9090
+          RELATADB_TOKEN: threatmap-default
         run: |
           set -euo pipefail
 
@@ -725,81 +721,34 @@ jobs:
           echo "Minting RelataDB tenant token"
           echo "========================================"
 
-          CONTAINER_ID="$(docker compose ps -q relatadb)"
-
-          if [ -z "$CONTAINER_ID" ]; then
-            echo "::error::RelataDB container was not found."
-            exit 1
-          fi
-
           RESPONSE_FILE="$(mktemp)"
 
-          docker exec \
-            -e RELATA_ADMIN_TOKEN="$RELATA_ADMIN_TOKEN" \
-            "$CONTAINER_ID" \
-            sh -c '
-              curl -fsS \
-                -X POST \
-                http://127.0.0.1:9091/admin/tokens \
-                -H "Authorization: Bearer ${RELATA_ADMIN_TOKEN}" \
-                -H "Content-Type: application/json" \
-                --data "{\"description\":\"github-actions-e2e\",\"tenant_id\":\"${RELATADB_ORG_ID}\"}"
-            ' > "$RESPONSE_FILE"
-
-          echo "RelataDB token endpoint responded."
-
-          cat "$RESPONSE_FILE"
-
-          TOKEN="$(
-            python - "$RESPONSE_FILE" <<'PY'
-          import json
-          import sys
-
-          path = sys.argv[1]
-
-          with open(path, "r", encoding="utf-8") as f:
-              data = json.load(f)
-
-          token = (
-              data.get("token")
-              or data.get("secret")
-              or data.get("access_token")
-          )
-
-          if not token:
-              raise SystemExit(
-                  "No tenant token found in RelataDB response. "
-                  f"Response keys: {list(data.keys())}"
-              )
-
-          print(token)
-          PY
+          HTTP_STATUS="$(
+            curl \
+              -sS \
+              -o "$RESPONSE_FILE" \
+              -w "%{http_code}" \
+              -X POST \
+              "$RELATADB_URL/<YOUR_EXISTING_TOKEN_ENDPOINT>" \
+              -H "Authorization: Bearer $RELATADB_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data '{
+                "tenant_id": "threatmap"
+              }"
           )"
+
+          echo "HTTP status: $HTTP_STATUS"
+          echo "Response:"
+          cat "$RESPONSE_FILE"
+          echo
 
           rm -f "$RESPONSE_FILE"
 
-          if [ -z "$TOKEN" ]; then
-            echo "::error::RelataDB returned an empty tenant token."
+          if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "201" ]; then
+            echo "::error::RelataDB tenant-token minting failed with HTTP $HTTP_STATUS"
             exit 1
           fi
 
-          case "$TOKEN" in
-            rlt_*)
-              ;;
-            *)
-              echo "::error::RelataDB returned an unexpected token format."
-              exit 1
-              ;;
-          esac
-
-          # Persist the generated tenant token for subsequent steps.
-          echo "RELATADB_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-
-          # Also expose it as a masked GitHub Actions secret.
-          echo "::add-mask::$TOKEN"
-
-          echo "Tenant token successfully minted."
-          echo "Token format: rlt_***"
 
       # ============================================================
       # VERIFY RELATABD AUTHENTICATION
