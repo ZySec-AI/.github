@@ -357,7 +357,15 @@ jobs:
 
           if [ -f "$APP/pnpm-lock.yaml" ]; then
 
-            PM="pnpm"
+            # A Python app can keep a stub package.json for the org quality
+            # gate. uv.lock plus pyproject.toml is the test project when that
+            # manifest does not declare a package manager.
+            if [ -f "$APP/uv.lock" ] && [ -f "$APP/pyproject.toml" ] &&
+               { [ ! -f "$APP/package.json" ] || ! grep -q '"packageManager"' "$APP/package.json"; }; then
+              PM="none"
+            else
+              PM="pnpm"
+            fi
 
           elif [ -f "$APP/yarn.lock" ]; then
 
@@ -768,6 +776,57 @@ jobs:
               ;;
 
           esac
+
+      # ============================================================
+      # SETUP UV
+      #
+      # Used when the caller passes unit_command for a uv project.
+      # Node package managers stay on their own install step.
+      # ============================================================
+
+      - name: Detect uv project
+        id: uv-project
+        if: |
+          inputs.unit_command != '' &&
+          (
+            steps.mode.outputs.mode == 'unit' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f "$APP_DIR/uv.lock" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup uv
+        if: steps.uv-project.outputs.present == 'true'
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ inputs.python_version }}
+          enable-cache: true
+
+      - name: Sync uv dependencies
+        if: steps.uv-project.outputs.present == 'true'
+        shell: bash
+        env:
+          GIT_CONFIG_COUNT: ${{ secrets.ORG_ADMIN_TOKEN != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.ORG_ADMIN_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
+        run: |
+          set -euo pipefail
+
+          cd "$APP_DIR"
+          # dev group (cpod-backend, cpod-arai), the test extra (C3 backend),
+          # or the dev extra.
+          if ! uv sync --frozen --dev; then
+            if ! uv sync --frozen --extra test; then
+              uv sync --frozen --extra dev
+            fi
+          fi
 
       # ============================================================
       # RUN CUSTOM UNIT TESTS
