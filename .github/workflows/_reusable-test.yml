@@ -80,6 +80,12 @@ on:
         type: string
         default: ""
 
+      pnpm_version:
+        description: "pnpm version used when package.json does not declare packageManager"
+        required: false
+        type: string
+        default: ""
+
       secondary_playwright_config:
         description: "Optional second Playwright configuration"
         required: false
@@ -441,16 +447,20 @@ jobs:
 
           cd "${{ inputs.working_directory }}"
 
-          VERSION="$(
-            node -pe '
-              const pkg = require("./package.json");
-              const value = pkg.packageManager || "";
-              value.startsWith("pnpm@") ? value.substring(5) : "";
-            '
-          )"
+          VERSION="${{ inputs.pnpm_version }}"
 
           if [ -z "$VERSION" ]; then
-            echo "::error::package.json must declare a pnpm version."
+            VERSION="$(
+              node -pe '
+                const pkg = require("./package.json");
+                const value = pkg.packageManager || "";
+                value.startsWith("pnpm@") ? value.substring(5) : "";
+              '
+            )"
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::package.json must declare a pnpm version, or the caller must set pnpm_version."
             echo "::error::Example: \"packageManager\": \"pnpm@9.15.0\""
             exit 1
           fi
