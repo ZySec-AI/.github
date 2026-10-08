@@ -1895,7 +1895,9 @@ jobs:
           CUSTOM_UNIT_RESULT="${CUSTOM_UNIT_RESULT:-not-run}"
           UNIT_TEST_TYPE="${UNIT_TEST_TYPE:-not-detected}"
 
-          if [ -n "${{ inputs.unit_command }}" ]; then
+          # Compare the expression result only. Inserting unit_command itself
+          # breaks this step when the command is multiline or contains quotes.
+          if [ "${{ inputs.unit_command != '' }}" = "true" ]; then
             UNIT_TEST_TYPE="custom"
           fi
 
