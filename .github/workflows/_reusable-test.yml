@@ -92,6 +92,12 @@ on:
         type: string
         default: ""
 
+      playwright_command:
+        description: "Optional Playwright command. Replaces the built-in playwright test invocation."
+        required: false
+        type: string
+        default: ""
+
       node_required:
         description: "Fail when no Node project and no Python project is detected"
         required: false
@@ -1536,8 +1542,11 @@ jobs:
 
       - name: Install Playwright browser
         if: |
-          steps.mode.outputs.mode == 'playwright' ||
-          steps.mode.outputs.mode == 'both'
+          inputs.playwright_command == '' &&
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -1577,6 +1586,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [ -n "${{ inputs.playwright_command }}" ]; then
+            ${{ inputs.playwright_command }}
+            exit 0
+          fi
 
           echo "========================================"
           echo "Running Playwright E2E tests"
