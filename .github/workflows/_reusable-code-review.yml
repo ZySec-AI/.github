@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout repo under review
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -86,7 +86,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.provider.outputs.skip != 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
 
@@ -124,7 +124,7 @@ jobs:
 
       - name: Checkout code-reviewer scripts
         if: steps.provider.outputs.skip != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ZySec-AI/code-reviewer
           ref: develop
