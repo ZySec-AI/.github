@@ -2,7 +2,7 @@ name: License Compatibility Check
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   pull-requests: write
@@ -10,5 +10,7 @@ permissions:
 
 jobs:
   check-license:
+    # Draft PRs do not occupy the CI pool; ready_for_review starts them.
+    if: ${{ !github.event.pull_request.draft }}
     uses: ZySec-AI/.github/.github/workflows/_reusable-check-license.yml@develop
     secrets: inherit

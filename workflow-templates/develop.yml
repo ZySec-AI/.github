@@ -9,6 +9,7 @@ on:
       - 'LICENSE'
       - '.gitignore'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [develop]
     paths-ignore:
       - '**.md'
@@ -18,4 +19,6 @@ on:
 
 jobs:
   basic:
+    # Draft PRs do not occupy the CI pool; ready_for_review starts them.
+    if: ${{ !github.event.pull_request.draft }}
     uses: zysec-ai/.github/.github/workflows/_reusable-basic-check.yml@develop

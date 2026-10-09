@@ -50,7 +50,7 @@ jobs:
   # ---------------------------------------------------------------------------
   stale_items:
     name: Stale issues + PRs
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Calculate total days
@@ -107,7 +107,7 @@ jobs:
   # ---------------------------------------------------------------------------
   stale_branches:
     name: Delete stale branches
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
