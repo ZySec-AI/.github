@@ -98,6 +98,18 @@ on:
         type: string
         default: ""
 
+      playwright_target:
+        description: "local starts from the repo Playwright config. remote uses playwright_base_url and does not require Docker."
+        required: false
+        type: string
+        default: "local"
+
+      playwright_base_url:
+        description: "Deployed application URL. Used only when playwright_target is remote."
+        required: false
+        type: string
+        default: ""
+
       node_required:
         description: "Fail when no Node project and no Python project is detected"
         required: false
@@ -170,6 +182,29 @@ jobs:
               exit 1
               ;;
           esac
+
+          case "${{ inputs.playwright_target }}" in
+            local|remote)
+              ;;
+            *)
+              echo "::error::Invalid playwright_target: ${{ inputs.playwright_target }}"
+              echo "::error::Expected: local or remote."
+              exit 1
+              ;;
+          esac
+
+          if [ "$MODE" = "playwright" ] || [ "$MODE" = "both" ]; then
+            if [ "${{ inputs.playwright_target }}" = "remote" ]; then
+              case "${{ inputs.playwright_base_url }}" in
+                http://*|https://*)
+                  ;;
+                *)
+                  echo "::error::Remote Playwright requires playwright_base_url to be an http or https URL."
+                  exit 1
+                  ;;
+              esac
+            fi
+          fi
 
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
 
@@ -977,8 +1012,14 @@ jobs:
 
       - name: Verify Docker
         if: |
-          steps.mode.outputs.mode == 'playwright' ||
-          steps.mode.outputs.mode == 'both'
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          ) &&
+          (
+            inputs.playwright_target != 'remote' ||
+            steps.detect-database.outputs.database == 'mongodb'
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -1209,6 +1250,14 @@ jobs:
           }
 
           export RELATADB_REQUIRED=0
+
+          if [ "${{ inputs.playwright_target }}" = "remote" ]; then
+            export BASE_URL="${{ inputs.playwright_base_url }}"
+            export PLAYWRIGHT_BASE_URL="${{ inputs.playwright_base_url }}"
+            export E2E_BASE_URL="${{ inputs.playwright_base_url }}"
+            export TEST_BASE_URL="${{ inputs.playwright_base_url }}"
+            echo "Playwright target: $BASE_URL"
+          fi
 
           run_playwright \
             test \
