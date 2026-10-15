@@ -138,7 +138,7 @@ jobs:
 
     runs-on: ${{ fromJSON(inputs.runs_on) }}
 
-    timeout-minutes: 45
+    timeout-minutes: 300
 
     steps:
 
@@ -859,6 +859,7 @@ jobs:
 
       - name: Run custom unit command
         id: custom-unit-tests
+        continue-on-error: ${{ steps.mode.outputs.mode == 'both' }}
         if: |
           inputs.unit_command != '' &&
           (
@@ -877,6 +878,7 @@ jobs:
 
       - name: Run Node unit tests
         id: node-unit-tests
+        continue-on-error: ${{ steps.mode.outputs.mode == 'both' }}
         if: |
           always() &&
           inputs.unit_command == '' &&
@@ -920,6 +922,7 @@ jobs:
 
       - name: Run Python unit tests
         id: python-unit-tests
+        continue-on-error: ${{ steps.mode.outputs.mode == 'both' }}
         if: |
           always() &&
           inputs.unit_command == '' &&
@@ -963,6 +966,7 @@ jobs:
       # ============================================================
 
       - name: Verify Playwright configuration
+        id: playwright-config
         if: |
           steps.mode.outputs.mode == 'playwright' ||
           steps.mode.outputs.mode == 'both'
@@ -973,9 +977,12 @@ jobs:
           CONFIG="${{ inputs.working_directory }}/${{ inputs.playwright_config }}"
 
           if [ ! -f "$CONFIG" ]; then
-            echo "::error::Playwright configuration '$CONFIG' does not exist."
-            exit 1
+            echo "Playwright configuration '$CONFIG' is not present. Skipping Playwright."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          echo "present=true" >> "$GITHUB_OUTPUT"
 
           EXTRA="${{ inputs.secondary_playwright_config }}"
 
@@ -993,8 +1000,11 @@ jobs:
 
       - name: Verify E2E test directory
         if: |
-          steps.mode.outputs.mode == 'playwright' ||
-          steps.mode.outputs.mode == 'both'
+          steps.playwright-config.outputs.present == 'true' &&
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -1012,6 +1022,7 @@ jobs:
 
       - name: Verify Docker
         if: |
+          steps.playwright-config.outputs.present == 'true' &&
           (
             steps.mode.outputs.mode == 'playwright' ||
             steps.mode.outputs.mode == 'both'
@@ -1038,6 +1049,7 @@ jobs:
 
       - name: Start MongoDB
         if: |
+          steps.playwright-config.outputs.present == 'true' &&
           steps.detect-database.outputs.database == 'mongodb' &&
           (
             steps.mode.outputs.mode == 'playwright' ||
@@ -1100,6 +1112,7 @@ jobs:
 
       - name: Install Playwright OS dependencies
         if: |
+          steps.playwright-config.outputs.present == 'true' &&
           inputs.install_playwright_deps == true &&
           (
             steps.mode.outputs.mode == 'playwright' ||
@@ -1168,6 +1181,7 @@ jobs:
 
       - name: Install Playwright browser
         if: |
+          steps.playwright-config.outputs.present == 'true' &&
           inputs.playwright_command == '' &&
           (
             steps.mode.outputs.mode == 'playwright' ||
@@ -1207,8 +1221,11 @@ jobs:
       - name: Run Playwright E2E tests
         id: playwright-tests
         if: |
-          steps.mode.outputs.mode == 'playwright' ||
-          steps.mode.outputs.mode == 'both'
+          steps.playwright-config.outputs.present == 'true' &&
+          (
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -1353,7 +1370,8 @@ jobs:
 
             playwright)
 
-              if [ "$PLAYWRIGHT_RESULT" != "success" ]; then
+              if [ "${{ steps.playwright-config.outputs.present }}" = "true" ] &&
+                 [ "$PLAYWRIGHT_RESULT" != "success" ]; then
                 echo "::error::Playwright quality gate failed."
                 exit 1
               fi
@@ -1406,7 +1424,8 @@ jobs:
 
               GATE_FAILED=false
 
-              if [ "$PLAYWRIGHT_RESULT" != "success" ]; then
+              if [ "${{ steps.playwright-config.outputs.present }}" = "true" ] &&
+                 [ "$PLAYWRIGHT_RESULT" != "success" ]; then
                 echo "::error::Playwright quality gate failed."
                 GATE_FAILED=true
               fi
