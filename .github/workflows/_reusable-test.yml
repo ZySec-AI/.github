@@ -1530,14 +1530,38 @@ jobs:
           PLAYWRIGHT_COUNTS="$(summarize_log "$RUNNER_TEMP/playwright-tests.log")"
           echo "Unit cases:         $UNIT_COUNTS"
           echo "Playwright cases:   $PLAYWRIGHT_COUNTS"
-          echo "Failed unit names:"
-          if [ -f "$RUNNER_TEMP/unit-tests.log" ]; then
-            grep -E '^[[:space:]]*(FAIL|FAILED) |^FAILED ' "$RUNNER_TEMP/unit-tests.log" | head -40 || true
-          fi
-          echo "Failed Playwright names:"
-          if [ -f "$RUNNER_TEMP/playwright-tests.log" ]; then
-            grep -E '^[[:space:]]*[0-9]+\)|^[[:space:]]*(FAIL|FAILED) ' "$RUNNER_TEMP/playwright-tests.log" | head -40 || true
-          fi
+
+          failed_files() {
+            local file="$1"
+            if [ ! -f "$file" ]; then
+              echo "(none)"
+              return
+            fi
+            awk '
+              function remember(path) {
+                sub(/:[0-9]+:[0-9]+$/, "", path)
+                sub(/:[0-9]+$/, "", path)
+                sub(/::.*$/, "", path)
+                if (path ~ /\.(spec|test)\.[cm]?[jt]sx?$/ || path ~ /\.py$/) files[path] = 1
+              }
+              /(^|[[:space:]])(FAIL|FAILED)([[:space:]]|$)/ || /^[[:space:]]*[0-9]+\)/ {
+                line = $0
+                if (match(line, /[^[:space:]›]+(\.spec|\.test)\.[cm]?[jt]sx?/)) remember(substr(line, RSTART, RLENGTH))
+                if (match(line, /[^[:space:]]+\.py/)) remember(substr(line, RSTART, RLENGTH))
+              }
+              END {
+                n = 0
+                for (f in files) n++
+                if (n == 0) print "(none)"
+                else for (f in files) print f
+              }
+            ' "$file" | sort -u
+          }
+
+          echo "Failed unit files:"
+          failed_files "$RUNNER_TEMP/unit-tests.log" | head -40
+          echo "Failed Playwright files:"
+          failed_files "$RUNNER_TEMP/playwright-tests.log" | head -40
           echo "========================================"
 
           case "$MODE" in
