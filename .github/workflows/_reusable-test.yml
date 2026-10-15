@@ -1539,15 +1539,35 @@ jobs:
             fi
             awk '
               function remember(path) {
+                gsub(/\033\[[0-9;]*[A-Za-z]/, "", path)
+                sub(/.*\/_work\/[^\/]+\/[^\/]+\//, "", path)
                 sub(/:[0-9]+:[0-9]+$/, "", path)
                 sub(/:[0-9]+$/, "", path)
                 sub(/::.*$/, "", path)
                 if (path ~ /\.(spec|test)\.[cm]?[jt]sx?$/ || path ~ /\.py$/) files[path] = 1
               }
-              /(^|[[:space:]])(FAIL|FAILED)([[:space:]]|$)/ || /^[[:space:]]*[0-9]+\)/ {
+              {
                 line = $0
-                if (match(line, /[^[:space:]›]+(\.spec|\.test)\.[cm]?[jt]sx?/)) remember(substr(line, RSTART, RLENGTH))
-                if (match(line, /[^[:space:]]+\.py/)) remember(substr(line, RSTART, RLENGTH))
+                gsub(/\033\[[0-9;]*[A-Za-z]/, "", line)
+                loc = index(line, "location:")
+                if (loc > 0) {
+                  token = substr(line, loc + 9)
+                  sub(/^[[:space:]]+/, "", token)
+                  if (substr(token, 1, 1) == "\047") token = substr(token, 2)
+                  sub(/\047.*$/, "", token)
+                  sub(/[[:space:]].*$/, "", token)
+                  remember(token)
+                }
+                err = index(line, "::error file=")
+                if (err > 0) {
+                  token = substr(line, err + 13)
+                  sub(/,.*/, "", token)
+                  remember(token)
+                }
+                if (line ~ /(^|[[:space:]])(FAIL|FAILED)([[:space:]]|$)/ || line ~ /^[[:space:]]*[0-9]+\)/) {
+                  if (match(line, /[^[:space:]›]+(\.spec|\.test)\.[cm]?[jt]sx?/)) remember(substr(line, RSTART, RLENGTH))
+                  if (match(line, /[^[:space:]]+\.py/)) remember(substr(line, RSTART, RLENGTH))
+                }
               }
               END {
                 n = 0
