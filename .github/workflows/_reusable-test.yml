@@ -1339,7 +1339,7 @@ jobs:
             exit $?
           fi
 
-          set -euo pipefail
+          set +e
 
           echo "========================================"
           echo "Running Playwright E2E tests"
@@ -1386,14 +1386,20 @@ jobs:
             test \
             -c "${{ inputs.playwright_config }}" \
             "${{ inputs.e2e_test_path }}"
+          playwright_fail=$?
 
           if [ -n "${{ inputs.secondary_playwright_config }}" ]; then
 
             run_playwright \
               test \
               -c "${{ inputs.secondary_playwright_config }}"
+            if [ "$?" -ne 0 ]; then
+              playwright_fail=1
+            fi
 
           fi
+
+          exit "$playwright_fail"
 
       # ============================================================
       # UPLOAD PLAYWRIGHT REPORT
