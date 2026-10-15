@@ -1481,7 +1481,7 @@ jobs:
           summarize_log() {
             local file="$1"
             if [ ! -f "$file" ]; then
-              echo "passed=0 failed=0 skipped=0 reported=no"
+              echo "total=0 passed=0 failed=0 skipped=0 reported=no"
               return
             fi
             awk '
@@ -1516,8 +1516,9 @@ jobs:
               /^# fail / { seen = 1; failed += $3; next }
               /^# skipped / { seen = 1; skipped += $3; next }
               END {
-                if (!seen) print "passed=0 failed=0 skipped=0 reported=no"
-                else printf "passed=%d failed=%d skipped=%d reported=yes\n", passed, failed, skipped
+                total = passed + failed + skipped
+                if (!seen) print "total=0 passed=0 failed=0 skipped=0 reported=no"
+                else printf "total=%d passed=%d failed=%d skipped=%d reported=yes\n", total, passed, failed, skipped
               }
             ' "$file"
           }
