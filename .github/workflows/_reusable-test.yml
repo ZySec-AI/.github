@@ -116,6 +116,12 @@ on:
         type: boolean
         default: true
 
+      configure_private_deps:
+        description: "Before install, run the caller .github/actions/configure-private-deps action and scripts/ci-pnpm-install.sh. Other repos leave this false."
+        required: false
+        type: boolean
+        default: false
+
     # ============================================================
     # SECRETS
     # ============================================================
@@ -124,6 +130,10 @@ on:
 
       ORG_ADMIN_TOKEN:
         description: "Token used for private Git dependencies"
+        required: false
+
+      GH_PAT:
+        description: "Optional token with read access to private Git dependencies. Used when configure_private_deps is true."
         required: false
 
 # ==================================================================
@@ -682,6 +692,57 @@ jobs:
           python-version: ${{ inputs.python_version }}
 
       # ============================================================
+      # PRIVATE GIT DEPENDENCIES
+      #
+      # Opt-in. A uses: job cannot run the caller's local action
+      # itself, and a relative uses: path would resolve in this
+      # .github repo. The caller's action script runs here, in
+      # the caller checkout, then ci-pnpm-install.sh links it.
+      # ============================================================
+
+      - name: Configure private Git dependencies
+        if: |
+          inputs.configure_private_deps &&
+          steps.package-manager.outputs.pm != 'none' &&
+          (
+            steps.mode.outputs.mode == 'unit' ||
+            steps.mode.outputs.mode == 'playwright' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.ORG_ADMIN_TOKEN }}
+          ACTION_FILE: ${{ github.workspace }}/.github/actions/configure-private-deps/action.yml
+        run: |
+          set -euo pipefail
+          if [ ! -f "$ACTION_FILE" ]; then
+            echo "::error::configure_private_deps requires .github/actions/configure-private-deps/action.yml in the caller repository."
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require("node:fs");
+          const lines = fs.readFileSync(process.env.ACTION_FILE, "utf8").split(/\r?\n/);
+          const start = lines.findIndex((line) => line === "      run: |");
+          if (start < 0) {
+            console.error("::error::Could not find the configure-private-deps run script.");
+            process.exit(1);
+          }
+          const body = [];
+          for (const line of lines.slice(start + 1)) {
+            if (line.startsWith("        ")) body.push(line.slice(8));
+            else if (line.trim() === "") body.push("");
+            else break;
+          }
+          if (!body.some((line) => line.includes("set -euo pipefail"))) {
+            console.error("::error::configure-private-deps run script was not extracted.");
+            process.exit(1);
+          }
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/configure-private-deps.sh`, `${body.join("\n")}\n`);
+          NODE
+          cd "${{ inputs.working_directory }}"
+          bash "$RUNNER_TEMP/configure-private-deps.sh"
+
+      # ============================================================
       # INSTALL ROOT NODE DEPENDENCIES
       # ============================================================
 
@@ -706,7 +767,11 @@ jobs:
           case "${{ steps.package-manager.outputs.pm }}" in
 
             pnpm)
-              pnpm install --frozen-lockfile
+              if [ "${{ inputs.configure_private_deps }}" = "true" ]; then
+                GIT_TERMINAL_PROMPT=0 bash scripts/ci-pnpm-install.sh
+              else
+                pnpm install --frozen-lockfile
+              fi
               ;;
 
             yarn)
@@ -868,9 +933,28 @@ jobs:
           )
         working-directory: ${{ inputs.working_directory }}
         shell: bash
+        env:
+          UNIT_COMMAND: ${{ inputs.unit_command }}
         run: |
-          set -euo pipefail
-          ${{ inputs.unit_command }}
+          set +e
+          printf '%s\n' "$UNIT_COMMAND" > "$RUNNER_TEMP/unit-command.sh"
+          # A failing command must not skip the later test commands in this step.
+          sed -i -E \
+            -e 's/^([[:space:]]*)set[[:space:]]+-euo[[:space:]]+pipefail[[:space:]]*$/\1set +e/' \
+            -e 's/^([[:space:]]*)set[[:space:]]+-e[[:space:]]*$/\1set +e/' \
+            "$RUNNER_TEMP/unit-command.sh"
+          (
+            unit_fail=0
+            trap 'unit_fail=1' ERR
+            source "$RUNNER_TEMP/unit-command.sh"
+            source_status=$?
+            trap - ERR
+            if [ "$source_status" -ne 0 ]; then
+              unit_fail=1
+            fi
+            exit "$unit_fail"
+          ) 2>&1 | tee "$RUNNER_TEMP/unit-tests.log"
+          exit "${PIPESTATUS[0]}"
 
       # ============================================================
       # RUN NODE UNIT TESTS
@@ -888,6 +972,7 @@ jobs:
           UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
         run: |
           set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/unit-tests.log") 2>&1
 
           if [ "$UNIT_LOCATION" = "nested" ]; then
             cd "$UNIT_DIR"
@@ -932,6 +1017,7 @@ jobs:
           UNIT_LOCATION: ${{ steps.unit-package-manager.outputs.location }}
         run: |
           set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/unit-tests.log") 2>&1
 
           if [ "$UNIT_LOCATION" = "nested" ]; then
 
@@ -1227,13 +1313,33 @@ jobs:
             steps.mode.outputs.mode == 'both'
           )
         shell: bash
+        env:
+          PLAYWRIGHT_COMMAND: ${{ inputs.playwright_command }}
         run: |
-          set -euo pipefail
+          set +e
+          exec > >(tee "$RUNNER_TEMP/playwright-tests.log") 2>&1
 
           if [ "${{ inputs.playwright_command != '' }}" = "true" ]; then
-            ${{ inputs.playwright_command }}
-            exit 0
+            printf '%s\n' "$PLAYWRIGHT_COMMAND" > "$RUNNER_TEMP/playwright-command.sh"
+            sed -i -E \
+              -e 's/^([[:space:]]*)set[[:space:]]+-euo[[:space:]]+pipefail[[:space:]]*$/\1set +e/' \
+              -e 's/^([[:space:]]*)set[[:space:]]+-e[[:space:]]*$/\1set +e/' \
+              "$RUNNER_TEMP/playwright-command.sh"
+            (
+              playwright_fail=0
+              trap 'playwright_fail=1' ERR
+              source "$RUNNER_TEMP/playwright-command.sh"
+              source_status=$?
+              trap - ERR
+              if [ "$source_status" -ne 0 ]; then
+                playwright_fail=1
+              fi
+              exit "$playwright_fail"
+            )
+            exit $?
           fi
+
+          set -euo pipefail
 
           echo "========================================"
           echo "Running Playwright E2E tests"
@@ -1364,6 +1470,67 @@ jobs:
           echo "Node unit result:   $NODE_UNIT_RESULT"
           echo "Python unit result: $PYTHON_UNIT_RESULT"
           echo "Unit test type:     $UNIT_TEST_TYPE"
+          echo "========================================"
+
+          summarize_log() {
+            local file="$1"
+            if [ ! -f "$file" ]; then
+              echo "passed=0 failed=0 skipped=0 reported=no"
+              return
+            fi
+            awk '
+              function num(kind,    token, n) {
+                token = $0
+                n = 0
+                if (match(token, "[0-9]+ " kind)) {
+                  n = substr(token, RSTART, RLENGTH)
+                  sub(/ .*/, "", n)
+                }
+                return n + 0
+              }
+              /Test Files/ { next }
+              /[Tt]ests/ && /passed/ {
+                seen = 1
+                failed += num("failed")
+                passed += num("passed")
+                skipped += num("skipped")
+                next
+              }
+              /^=+/ && /(failed|passed)/ {
+                seen = 1
+                failed += num("failed")
+                passed += num("passed")
+                skipped += num("skipped")
+                next
+              }
+              /^[[:space:]]*[0-9]+ failed([[:space:]]|$)/ { seen = 1; failed += $1; next }
+              /^[[:space:]]*[0-9]+ passed([[:space:]]|$)/ { seen = 1; passed += $1; next }
+              /^[[:space:]]*[0-9]+ skipped([[:space:]]|$)/ { seen = 1; skipped += $1; next }
+              /^# pass / { seen = 1; passed += $3; next }
+              /^# fail / { seen = 1; failed += $3; next }
+              /^# skipped / { seen = 1; skipped += $3; next }
+              END {
+                if (!seen) print "passed=0 failed=0 skipped=0 reported=no"
+                else printf "passed=%d failed=%d skipped=%d reported=yes\n", passed, failed, skipped
+              }
+            ' "$file"
+          }
+
+          echo "========================================"
+          echo "Test counts"
+          echo "========================================"
+          UNIT_COUNTS="$(summarize_log "$RUNNER_TEMP/unit-tests.log")"
+          PLAYWRIGHT_COUNTS="$(summarize_log "$RUNNER_TEMP/playwright-tests.log")"
+          echo "Unit cases:         $UNIT_COUNTS"
+          echo "Playwright cases:   $PLAYWRIGHT_COUNTS"
+          echo "Failed unit names:"
+          if [ -f "$RUNNER_TEMP/unit-tests.log" ]; then
+            grep -E '^[[:space:]]*(FAIL|FAILED) |^FAILED ' "$RUNNER_TEMP/unit-tests.log" | head -40 || true
+          fi
+          echo "Failed Playwright names:"
+          if [ -f "$RUNNER_TEMP/playwright-tests.log" ]; then
+            grep -E '^[[:space:]]*[0-9]+\)|^[[:space:]]*(FAIL|FAILED) ' "$RUNNER_TEMP/playwright-tests.log" | head -40 || true
+          fi
           echo "========================================"
 
           case "$MODE" in
