@@ -1347,6 +1347,18 @@ jobs:
             done < <(printf '%s\n' "$TEST_ENV")
             unset TEST_ENV
             echo "TEST_ENV loaded keys:${test_env_keys}"
+
+            # ScaleRisk requires APP_MASTER_SECRET as exactly 64 lowercase
+            # hex chars. Repo secrets are often shorter; sha256 always fits.
+            if [ -n "${APP_MASTER_SECRET:-}" ]; then
+              app_master="$(printf '%s' "$APP_MASTER_SECRET" | tr 'A-F' 'a-f')"
+              if printf '%s' "$app_master" | grep -Eq '^[0-9a-f]{64}$'; then
+                export APP_MASTER_SECRET="$app_master"
+              else
+                export APP_MASTER_SECRET="$(printf '%s' "$APP_MASTER_SECRET" | sha256sum | awk '{print $1}')"
+                echo "APP_MASTER_SECRET normalized to 32-byte hex (sha256)"
+              fi
+            fi
           else
             echo "TEST_ENV is not set for this repository"
           fi
