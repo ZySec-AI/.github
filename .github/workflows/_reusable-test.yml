@@ -136,6 +136,13 @@ on:
         description: "Optional token with read access to private Git dependencies. Used when configure_private_deps is true."
         required: false
 
+      # Optional dotenv body (KEY=value per line). Callers pass it with
+      # secrets: inherit. Every line becomes an env var before Playwright.
+      # GitHub cannot list all repo secrets, so one blob replaces per-key
+      # edits in this shared workflow. Leave unset in repos that need none.
+      TEST_ENV:
+        required: false
+
 # ==================================================================
 # JOB
 # ==================================================================
@@ -1315,9 +1322,34 @@ jobs:
         shell: bash
         env:
           PLAYWRIGHT_COMMAND: ${{ inputs.playwright_command }}
+          TEST_ENV: ${{ secrets.TEST_ENV }}
         run: |
           set +e
           exec > >(tee "$RUNNER_TEMP/playwright-tests.log") 2>&1
+
+          # Export every KEY=value from the caller's TEST_ENV secret.
+          # Adding or removing a key is a repo secret edit only.
+          # Log key names only. Values are secrets and stay masked.
+          if [ -n "${TEST_ENV:-}" ]; then
+            test_env_keys=""
+            while IFS= read -r line || [ -n "$line" ]; do
+              case "$line" in
+                ''|\#*)
+                  continue
+                  ;;
+              esac
+              key="${line%%=*}"
+              value="${line#*=}"
+              if [ -n "$key" ] && [ "$key" != "$line" ]; then
+                export "$key=$value"
+                test_env_keys="${test_env_keys} ${key}"
+              fi
+            done < <(printf '%s\n' "$TEST_ENV")
+            unset TEST_ENV
+            echo "TEST_ENV loaded keys:${test_env_keys}"
+          else
+            echo "TEST_ENV is not set for this repository"
+          fi
 
           if [ "${{ inputs.playwright_command != '' }}" = "true" ]; then
             printf '%s\n' "$PLAYWRIGHT_COMMAND" > "$RUNNER_TEMP/playwright-command.sh"
