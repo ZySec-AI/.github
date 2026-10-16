@@ -57,7 +57,7 @@ jobs:
         id: calc
         run: echo "total_days=$(( ${{ inputs.issue_pr_stale_days }} + ${{ inputs.issue_pr_close_days }} ))" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/stale@v9
+      - uses: actions/stale@v11
         with:
           repo-token: ${{ secrets.ORG_ADMIN_TOKEN || github.token }}
           # PR policy
