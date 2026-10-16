@@ -122,6 +122,72 @@ on:
         type: boolean
         default: false
 
+      timeout_minutes:
+        description: "Job timeout in minutes. Org default is 300 (5 hours)."
+        required: false
+        type: number
+        default: 60
+
+      playwright_prepare_command:
+        description: "Optional shell run before Mongo/Next/Playwright (builds, seeds, asset prep)."
+        required: false
+        type: string
+        default: ""
+
+      playwright_env:
+        description: "Optional non-secret KEY=value lines exported before Playwright."
+        required: false
+        type: string
+        default: ""
+
+      playwright_start_mongodb:
+        description: "Start a disposable MongoDB container and export MONGODB_URI before Playwright."
+        required: false
+        type: boolean
+        default: false
+
+      playwright_mongodb_image:
+        description: "MongoDB image when playwright_start_mongodb is true."
+        required: false
+        type: string
+        default: "mongo:8.0"
+
+      playwright_mongodb_replica_set:
+        description: "Initialize a one-node replica set (required by some apps)."
+        required: false
+        type: boolean
+        default: false
+
+      playwright_mongodb_db_name:
+        description: "Optional database name. Sets MONGODB_DB_NAME and appends to MONGODB_URI path."
+        required: false
+        type: string
+        default: ""
+
+      playwright_app_port:
+        description: "App port for local Next. Empty picks a free port. Use 3000 when tests hardcode localhost:3000."
+        required: false
+        type: string
+        default: ""
+
+      playwright_next_command:
+        description: "Optional command to start the app server in the background. Use $PLAYWRIGHT_APP_PORT for the port."
+        required: false
+        type: string
+        default: ""
+
+      playwright_health_url:
+        description: "URL to wait on after starting Next. Use $PLAYWRIGHT_APP_PORT in the string."
+        required: false
+        type: string
+        default: ""
+
+      playwright_health_grep:
+        description: "If set, health check passes when the response body contains this text. Otherwise HTTP 200 is enough."
+        required: false
+        type: string
+        default: ""
+
     # ============================================================
     # SECRETS
     # ============================================================
@@ -136,6 +202,13 @@ on:
         description: "Optional token with read access to private Git dependencies. Used when configure_private_deps is true."
         required: false
 
+      # Optional dotenv body (KEY=value per line). Callers pass it with
+      # secrets: inherit. Every line becomes an env var before Playwright.
+      # GitHub cannot list all repo secrets, so one blob replaces per-key
+      # edits in this shared workflow. Leave unset in repos that need none.
+      TEST_ENV:
+        required: false
+
 # ==================================================================
 # JOB
 # ==================================================================
@@ -148,7 +221,7 @@ jobs:
 
     runs-on: ${{ fromJSON(inputs.runs_on) }}
 
-    timeout-minutes: 300
+    timeout-minutes: ${{ inputs.timeout_minutes }}
 
     steps:
 
@@ -1315,9 +1388,205 @@ jobs:
         shell: bash
         env:
           PLAYWRIGHT_COMMAND: ${{ inputs.playwright_command }}
+          PLAYWRIGHT_PREPARE_COMMAND: ${{ inputs.playwright_prepare_command }}
+          PLAYWRIGHT_ENV: ${{ inputs.playwright_env }}
+          PLAYWRIGHT_NEXT_COMMAND: ${{ inputs.playwright_next_command }}
+          TEST_ENV: ${{ secrets.TEST_ENV }}
         run: |
           set +e
           exec > >(tee "$RUNNER_TEMP/playwright-tests.log") 2>&1
+
+          cd "$APP_DIR"
+
+          ci_mongo_name=""
+          ci_next_pid=""
+          cleanup_playwright_ci() {
+            if [ -n "${ci_next_pid}" ]; then
+              kill "$ci_next_pid" >/dev/null 2>&1 || true
+            fi
+            if [ -n "${ci_mongo_name}" ]; then
+              docker rm -f "$ci_mongo_name" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_playwright_ci EXIT
+
+          export_dotenv() {
+            local body="$1"
+            local label="$2"
+            local keys=""
+            while IFS= read -r line || [ -n "$line" ]; do
+              case "$line" in
+                ''|\#*)
+                  continue
+                  ;;
+              esac
+              key="${line%%=*}"
+              value="${line#*=}"
+              if [ -n "$key" ] && [ "$key" != "$line" ]; then
+                export "$key=$value"
+                keys="${keys} ${key}"
+              fi
+            done < <(printf '%s\n' "$body")
+            echo "${label} loaded keys:${keys}"
+          }
+
+          # Secrets from the caller repo (TEST_ENV).
+          if [ -n "${TEST_ENV:-}" ]; then
+            export_dotenv "$TEST_ENV" "TEST_ENV"
+            unset TEST_ENV
+
+            # ScaleRisk requires APP_MASTER_SECRET as exactly 64 lowercase
+            # hex chars. Repo secrets are often shorter; sha256 always fits.
+            if [ -n "${APP_MASTER_SECRET:-}" ]; then
+              app_master="$(printf '%s' "$APP_MASTER_SECRET" | tr 'A-F' 'a-f')"
+              if printf '%s' "$app_master" | grep -Eq '^[0-9a-f]{64}$'; then
+                export APP_MASTER_SECRET="$app_master"
+              else
+                export APP_MASTER_SECRET="$(printf '%s' "$APP_MASTER_SECRET" | sha256sum | awk '{print $1}')"
+                echo "APP_MASTER_SECRET normalized to 32-byte hex (sha256)"
+              fi
+            fi
+          else
+            echo "TEST_ENV is not set for this repository"
+          fi
+
+          # Non-secret KEY=value from the caller workflow.
+          if [ -n "${PLAYWRIGHT_ENV:-}" ]; then
+            export_dotenv "$PLAYWRIGHT_ENV" "playwright_env"
+          fi
+
+          if [ "${{ inputs.playwright_target }}" = "remote" ]; then
+            export BASE_URL="${{ inputs.playwright_base_url }}"
+            export PLAYWRIGHT_BASE_URL="${{ inputs.playwright_base_url }}"
+            export E2E_BASE_URL="${{ inputs.playwright_base_url }}"
+            export TEST_BASE_URL="${{ inputs.playwright_base_url }}"
+            echo "Playwright target: $BASE_URL"
+          fi
+
+          if [ -n "${PLAYWRIGHT_PREPARE_COMMAND:-}" ]; then
+            echo "Running playwright_prepare_command"
+            printf '%s\n' "$PLAYWRIGHT_PREPARE_COMMAND" > "$RUNNER_TEMP/playwright-prepare.sh"
+            sed -i -E \
+              -e 's/^([[:space:]]*)set[[:space:]]+-euo[[:space:]]+pipefail[[:space:]]*$/\1set +e/' \
+              -e 's/^([[:space:]]*)set[[:space:]]+-e[[:space:]]*$/\1set +e/' \
+              "$RUNNER_TEMP/playwright-prepare.sh"
+            # shellcheck disable=SC1090
+            source "$RUNNER_TEMP/playwright-prepare.sh"
+            prepare_status=$?
+            if [ "$prepare_status" -ne 0 ]; then
+              echo "playwright_prepare_command failed with status $prepare_status" >&2
+              exit "$prepare_status"
+            fi
+          fi
+
+          if [ "${{ inputs.playwright_start_mongodb }}" = "true" ]; then
+            ci_mongo_name="ci-mongo-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            docker rm -f "$ci_mongo_name" >/dev/null 2>&1 || true
+            if [ "${{ inputs.playwright_mongodb_replica_set }}" = "true" ]; then
+              docker run -d --name "$ci_mongo_name" -p "127.0.0.1::27017" \
+                --memory=1g "${{ inputs.playwright_mongodb_image }}" --replSet rs0 --bind_ip_all
+              ready=""
+              for _ in $(seq 1 60); do
+                if docker exec "$ci_mongo_name" mongosh --quiet --eval \
+                  'try { rs.status() } catch (error) { rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]}) }; if (!db.hello().isWritablePrimary) { quit(1) }' \
+                  >/dev/null 2>&1; then
+                  ready=1
+                  break
+                fi
+                sleep 1
+              done
+              if [ -z "$ready" ]; then
+                docker logs "$ci_mongo_name" || true
+                echo "Playwright MongoDB replica set did not become primary" >&2
+                exit 1
+              fi
+            else
+              docker run -d --name "$ci_mongo_name" -p "127.0.0.1::27017" \
+                "${{ inputs.playwright_mongodb_image }}"
+              ready=""
+              for _ in $(seq 1 30); do
+                if docker exec "$ci_mongo_name" mongosh --quiet --eval "db.adminCommand({ ping: 1 })" >/dev/null 2>&1; then
+                  ready=1
+                  break
+                fi
+                sleep 1
+              done
+              if [ -z "$ready" ]; then
+                docker logs "$ci_mongo_name" || true
+                echo "Playwright MongoDB did not become ready" >&2
+                exit 1
+              fi
+            fi
+            mongo_port="$(docker port "$ci_mongo_name" 27017/tcp | cut -d: -f2)"
+            db_name="${{ inputs.playwright_mongodb_db_name }}"
+            if [ -n "$db_name" ]; then
+              export MONGODB_DB_NAME="$db_name"
+              export MONGODB_URI="mongodb://127.0.0.1:${mongo_port}/${db_name}?directConnection=true"
+            else
+              export MONGODB_URI="mongodb://127.0.0.1:${mongo_port}/?directConnection=true"
+            fi
+            export MONGO_TEST_URI="$MONGODB_URI"
+            echo "Playwright MongoDB ready on port ${mongo_port}"
+          fi
+
+          if [ -n "${{ inputs.playwright_app_port }}" ] || [ -n "${PLAYWRIGHT_NEXT_COMMAND:-}" ]; then
+            if [ -n "${{ inputs.playwright_app_port }}" ]; then
+              export PLAYWRIGHT_APP_PORT="${{ inputs.playwright_app_port }}"
+              if ! node -e "const net=require('net'); const s=net.createServer(); s.once('error',()=>process.exit(1)); s.listen(Number(process.env.PLAYWRIGHT_APP_PORT),'127.0.0.1',()=>s.close());"; then
+                echo "Port ${PLAYWRIGHT_APP_PORT} is already in use" >&2
+                exit 1
+              fi
+            else
+              export PLAYWRIGHT_APP_PORT="$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
+            fi
+            export PORTAL_PORT="$PLAYWRIGHT_APP_PORT"
+            export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-http://127.0.0.1:${PLAYWRIGHT_APP_PORT}}"
+            export TEST_BASE_URL="${TEST_BASE_URL:-$NEXT_PUBLIC_APP_URL}"
+            echo "Playwright app port: ${PLAYWRIGHT_APP_PORT}"
+          fi
+
+          if [ -n "${PLAYWRIGHT_NEXT_COMMAND:-}" ]; then
+            echo "Starting playwright_next_command"
+            next_log="$RUNNER_TEMP/playwright-next.log"
+            bash -lc "$PLAYWRIGHT_NEXT_COMMAND" >"$next_log" 2>&1 &
+            ci_next_pid=$!
+            health_url="${{ inputs.playwright_health_url }}"
+            health_url="$(eval echo "$health_url")"
+            health_grep="${{ inputs.playwright_health_grep }}"
+            ready=""
+            for _ in $(seq 1 90); do
+              if ! kill -0 "$ci_next_pid" 2>/dev/null; then
+                cat "$next_log" || true
+                echo "App server exited before it was ready" >&2
+                exit 1
+              fi
+              if [ -n "$health_url" ]; then
+                if [ -n "$health_grep" ]; then
+                  body="$(curl -fsS "$health_url" 2>/dev/null || true)"
+                  if printf '%s' "$body" | grep -q "$health_grep"; then
+                    ready=1
+                    break
+                  fi
+                else
+                  code="$(curl -s -o /dev/null -w '%{http_code}' "$health_url" || true)"
+                  if [ "$code" = "200" ]; then
+                    ready=1
+                    break
+                  fi
+                fi
+              else
+                ready=1
+                break
+              fi
+              sleep 2
+            done
+            if [ -z "$ready" ]; then
+              cat "$next_log" || true
+              echo "Timed out waiting for ${health_url:-app server}" >&2
+              exit 1
+            fi
+            echo "App server is ready"
+          fi
 
           if [ "${{ inputs.playwright_command != '' }}" = "true" ]; then
             printf '%s\n' "$PLAYWRIGHT_COMMAND" > "$RUNNER_TEMP/playwright-command.sh"
@@ -1344,8 +1613,6 @@ jobs:
           echo "========================================"
           echo "Running Playwright E2E tests"
           echo "========================================"
-
-          cd "$APP_DIR"
 
           run_playwright() {
 
@@ -1374,18 +1641,16 @@ jobs:
 
           export RELATADB_REQUIRED=0
 
-          if [ "${{ inputs.playwright_target }}" = "remote" ]; then
-            export BASE_URL="${{ inputs.playwright_base_url }}"
-            export PLAYWRIGHT_BASE_URL="${{ inputs.playwright_base_url }}"
-            export E2E_BASE_URL="${{ inputs.playwright_base_url }}"
-            export TEST_BASE_URL="${{ inputs.playwright_base_url }}"
-            echo "Playwright target: $BASE_URL"
+          if [ -n "${{ inputs.e2e_test_path }}" ]; then
+            run_playwright \
+              test \
+              -c "${{ inputs.playwright_config }}" \
+              "${{ inputs.e2e_test_path }}"
+          else
+            run_playwright \
+              test \
+              -c "${{ inputs.playwright_config }}"
           fi
-
-          run_playwright \
-            test \
-            -c "${{ inputs.playwright_config }}" \
-            "${{ inputs.e2e_test_path }}"
           playwright_fail=$?
 
           if [ -n "${{ inputs.secondary_playwright_config }}" ]; then
