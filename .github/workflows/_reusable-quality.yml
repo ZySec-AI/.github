@@ -54,7 +54,7 @@ jobs:
       node: ${{ steps.detect.outputs.node }}
       rust: ${{ steps.detect.outputs.rust }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - id: detect
@@ -92,11 +92,11 @@ jobs:
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ inputs.python_version }}
 
@@ -166,7 +166,7 @@ jobs:
             -q
         continue-on-error: false
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-report
@@ -196,7 +196,7 @@ jobs:
       API_URL: http://localhost:8001
       NEXT_TELEMETRY_DISABLED: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Detect stack (Next.js, Prisma, package manager)
         id: stack
@@ -231,21 +231,21 @@ jobs:
           VER=$(node -pe "require('./package.json').packageManager || ''" 2>/dev/null | sed 's/pnpm@//' | tr -d '\n')
           echo "version=${VER:-9}" >> $GITHUB_OUTPUT
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: steps.stack.outputs.pm == 'pnpm'
         with:
           version: ${{ steps.pnpm-ver.outputs.version }}
 
       - name: Setup Node with package-manager cache
         if: steps.stack.outputs.lockfile == '1'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node_version }}
           cache: ${{ steps.stack.outputs.pm }}
 
       - name: Setup Node without package-manager cache
         if: steps.stack.outputs.lockfile != '1'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -398,7 +398,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         continue-on-error: true
         with:
@@ -428,7 +428,7 @@ jobs:
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -482,7 +482,7 @@ jobs:
           fi
           echo "✓ Rust line coverage meets ${COVERAGE_THRESHOLD}% threshold"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         continue-on-error: true
         with:

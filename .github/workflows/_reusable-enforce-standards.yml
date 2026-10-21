@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Block labels that are not on the org manifest
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Allowlist, read from the manifest at run time — not a hand-kept
@@ -97,7 +97,7 @@ jobs:
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     steps:
       - name: Block non-canonical milestone
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const CANONICAL_MILESTONES = new Set([

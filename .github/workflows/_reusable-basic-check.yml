@@ -29,7 +29,7 @@ jobs:
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
