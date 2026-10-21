@@ -23,11 +23,8 @@ jobs:
     if: github.event_name == 'label' && github.event.action == 'created'
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 10
     steps:
@@ -89,11 +86,8 @@ jobs:
     if: github.event_name == 'milestone' && github.event.action == 'created'
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     steps:
       - name: Block non-canonical milestone

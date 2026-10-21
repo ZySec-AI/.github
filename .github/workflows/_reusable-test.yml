@@ -218,11 +218,8 @@ jobs:
 
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
 
     timeout-minutes: ${{ inputs.timeout_minutes }}
