@@ -20,3 +20,4 @@ permissions:
 jobs:
   enforce:
     uses: ZySec-AI/.github/.github/workflows/_reusable-enforce-standards.yml@develop
+    secrets: inherit

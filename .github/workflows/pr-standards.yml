@@ -12,7 +12,6 @@ permissions:
 jobs:
   validate:
     uses: ./.github/workflows/_reusable-pr-standards.yml
-    with:
-      runs_on: '["self-hosted","linux","x64","zysec-ai-ci"]'
     secrets:
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+      CI_PROXY_URL: ${{ secrets.CI_PROXY_URL }}
