@@ -2,7 +2,6 @@ name: pr standards (reusable)
 
 on:
   workflow_call:
-    inputs:
     secrets:
       ORG_ADMIN_TOKEN:
         required: false
