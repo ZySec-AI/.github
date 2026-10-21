@@ -3,16 +3,10 @@ name: pr standards (reusable)
 on:
   workflow_call:
     inputs:
-      # Runner labels, as a JSON array string. Defaults to the org's self-hosted
-      # CI pool, so every private repository that calls this is unaffected.
-      #
-      # Callers default to the organization self-hosted CI runner pool.
-      runs_on:
-        type: string
-        required: false
-        default: '["self-hosted","linux","x64","zysec-ai-ci"]'
     secrets:
       ORG_ADMIN_TOKEN:
+        required: false
+      CI_PROXY_URL:
         required: false
 
 concurrency:
@@ -27,7 +21,14 @@ permissions:
 jobs:
   validate:
     name: Validate PR metadata
-    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    runs-on: ubuntu-latest
+    env:
+      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
+      https_proxy: ${{ secrets.CI_PROXY_URL }}
+      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
+      http_proxy: ${{ secrets.CI_PROXY_URL }}
+      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
+      no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     steps:
       - name: Check PR has description
         env:

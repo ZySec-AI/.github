@@ -33,6 +33,9 @@ on:
         description: 'Close stale items this many extra days later (default 7) — total 14'
         type: number
         default: 7
+    secrets:
+      CI_PROXY_URL:
+        required: false
 
 # Never run two sweep passes at once (a slow one plus a manual dispatch).
 concurrency:
@@ -50,7 +53,14 @@ jobs:
   # ---------------------------------------------------------------------------
   stale_items:
     name: Stale issues + PRs
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ubuntu-latest
+    env:
+      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
+      https_proxy: ${{ secrets.CI_PROXY_URL }}
+      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
+      http_proxy: ${{ secrets.CI_PROXY_URL }}
+      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
+      no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 15
     steps:
       - name: Calculate total days
@@ -107,7 +117,14 @@ jobs:
   # ---------------------------------------------------------------------------
   stale_branches:
     name: Delete stale branches
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ubuntu-latest
+    env:
+      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
+      https_proxy: ${{ secrets.CI_PROXY_URL }}
+      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
+      http_proxy: ${{ secrets.CI_PROXY_URL }}
+      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
+      no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 15
     permissions:
       contents: write
