@@ -68,11 +68,8 @@ jobs:
     if: inputs.auto_detect
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 5
     outputs:
@@ -102,11 +99,8 @@ jobs:
     permissions:
       contents: read
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
       GITLEAKS_VERSION: "8.30.1"
     steps:
@@ -141,11 +135,8 @@ jobs:
     name: Dependency Review
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 10
     if: github.event_name == 'pull_request'
@@ -165,11 +156,8 @@ jobs:
     name: Trivy - filesystem scan
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 15
     permissions:
@@ -211,11 +199,8 @@ jobs:
       )
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 20
     permissions:

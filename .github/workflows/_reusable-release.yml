@@ -37,11 +37,8 @@ jobs:
     name: Guard — develop or stage must be ancestor of release
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 5
     steps:
@@ -84,11 +81,8 @@ jobs:
     name: QA Sign-off Gate
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 5
     needs: guard
@@ -120,11 +114,8 @@ jobs:
     name: Generate Changelog
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 10
     needs: guard
@@ -217,11 +208,8 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 10
     needs: [guard, changelog]
@@ -263,11 +251,8 @@ jobs:
     name: Notify Teams
     runs-on: ubuntu-latest
     env:
-      HTTPS_PROXY: ${{ secrets.CI_PROXY_URL }}
       https_proxy: ${{ secrets.CI_PROXY_URL }}
-      HTTP_PROXY: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
-      NO_PROXY: localhost,127.0.0.1,.blob.core.windows.net
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 5
     needs: [github-release, changelog]
