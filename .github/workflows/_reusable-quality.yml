@@ -88,7 +88,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: '0.13.0'
+          enable-cache: false
 
       - uses: actions/setup-python@v5
         with:
