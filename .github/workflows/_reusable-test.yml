@@ -117,7 +117,7 @@ on:
         default: false
 
       timeout_minutes:
-        description: "Job timeout in minutes. Org default is 300 (5 hours)."
+        description: "Job timeout in minutes. Org default is 60 (1 hours)."
         required: false
         type: number
         default: 60
@@ -1820,12 +1820,38 @@ jobs:
                 skipped += num_key("skipped")
                 next
               }
+              # automation-testing prompt:test footer: "Passed: 12" / "Failed: 3"
+              /^Passed:[[:space:]]+[0-9]+/ {
+                seen = 1
+                passed += $2 + 0
+                next
+              }
+              /^Failed:[[:space:]]+[0-9]+/ {
+                seen = 1
+                failed += $2 + 0
+                next
+              }
+              # prompt:test per-case lines (also covers timeout/cancel before footer):
+              # "[23/728] Passed TC-CHAT-02 (...)" / "[23/728] Failed TC-CHAT-02 (...)"
+              /\[[0-9]+\/[0-9]+\][[:space:]]+Passed[[:space:]]/ {
+                prompt_pass++
+                next
+              }
+              /\[[0-9]+\/[0-9]+\][[:space:]]+Failed[[:space:]]/ {
+                prompt_fail++
+                next
+              }
               # Fallback when Node omits the footer: count timed result lines.
               /\([0-9.]+ms\)/ {
                 if (index($0, "✔") > 0 || index($0, "✓") > 0) check_pass++
                 if (index($0, "✖") > 0 || index($0, "✗") > 0) check_fail++
               }
               END {
+                if (!seen && (prompt_pass + prompt_fail) > 0) {
+                  seen = 1
+                  passed = prompt_pass
+                  failed = prompt_fail
+                }
                 if (!seen && (check_pass + check_fail) > 0) {
                   seen = 1
                   passed = check_pass
