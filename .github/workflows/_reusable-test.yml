@@ -209,6 +209,9 @@ on:
       TEST_ENV:
         required: false
 
+      CI_PROXY_URL:
+        required: false
+
 # ==================================================================
 # JOB
 # ==================================================================
@@ -220,6 +223,10 @@ jobs:
     name: Quality Gates
 
     runs-on: ${{ fromJSON(inputs.runs_on) }}
+    env:
+      https_proxy: ${{ secrets.CI_PROXY_URL }}
+      http_proxy: ${{ secrets.CI_PROXY_URL }}
+      no_proxy: localhost,127.0.0.1,.blob.core.windows.net
 
     timeout-minutes: ${{ inputs.timeout_minutes }}
 
@@ -967,8 +974,9 @@ jobs:
 
       - name: Setup uv
         if: steps.uv-project.outputs.present == 'true'
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10.3.0
         with:
+          version: '0.13.0'
           python-version: ${{ inputs.python_version }}
           enable-cache: true
 

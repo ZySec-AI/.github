@@ -19,3 +19,4 @@ on:
 jobs:
   basic:
     uses: zysec-ai/.github/.github/workflows/_reusable-basic-check.yml@develop
+    secrets: inherit

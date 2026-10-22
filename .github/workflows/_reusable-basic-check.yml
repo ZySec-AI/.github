@@ -8,6 +8,9 @@ name: basic check (reusable)
 
 on:
   workflow_call:
+    secrets:
+      CI_PROXY_URL:
+        required: false
 
 concurrency:
   group: basic-${{ github.workflow }}-${{ github.ref }}
@@ -16,7 +19,11 @@ concurrency:
 jobs:
   lint:
     name: Basic Check
-    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
+    runs-on: ubuntu-latest
+    env:
+      https_proxy: ${{ secrets.CI_PROXY_URL }}
+      http_proxy: ${{ secrets.CI_PROXY_URL }}
+      no_proxy: localhost,127.0.0.1,.blob.core.windows.net
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4

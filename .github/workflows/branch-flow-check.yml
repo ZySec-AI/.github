@@ -11,6 +11,4 @@ permissions:
 jobs:
   branch-checks:
     uses: ZySec-AI/.github/.github/workflows/_reusable-branch-flow-check.yml@develop
-    with:
-      runs_on: '["self-hosted","linux","x64","zysec-ai-ci"]'
     secrets: inherit
