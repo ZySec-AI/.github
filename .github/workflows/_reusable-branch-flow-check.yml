@@ -50,6 +50,8 @@ jobs:
           DST="${{ github.base_ref }}"
           echo "Flow: $SRC → $DST"
 
+          PATTERN='^(feat|feature|fix|bugfix|bug|hotfix|chore|docs|doc|documentation|refactor|test|tests|perf|performance|build|ci|cd|cicd|revert|release-prep|support|experiment|spike|infra)/[a-z0-9][a-z0-9.-]*(/[a-z0-9][a-z0-9.-]*)?$'
+
           case "$DST" in
             develop)
               [[ "$SRC" =~ ^(stage|release)$ ]] && { echo "✓ back-merge: $SRC → develop"; exit 0; }
@@ -67,6 +69,10 @@ jobs:
               echo "❌ Only 'develop', 'stage', or 'hotfix/*' may merge into release"; exit 1
               ;;
             *)
+              if [[ "$DST" =~ $PATTERN ]]; then
+                echo "✓ stacked PR: $SRC → $DST"
+                exit 0
+              fi
               echo "❌ Unexpected target: $DST"; exit 1
               ;;
           esac
