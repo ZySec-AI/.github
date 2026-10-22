@@ -147,10 +147,10 @@ on:
         default: false
 
       playwright_mongodb_image:
-        description: "MongoDB image when playwright_start_mongodb is true."
+        description: "MongoDB image when playwright_start_mongodb is true. Prefer 7.0 on runners with Linux kernel 6.19–7.0.13 (mongo:8.0.21+ refuses those kernels — SERVER-121912)."
         required: false
         type: string
-        default: "mongo:8.0"
+        default: "mongo:7.0"
 
       playwright_mongodb_replica_set:
         description: "Initialize a one-node replica set (required by some apps)."
@@ -1226,7 +1226,7 @@ jobs:
             -d \
             --name "$MONGO_NAME" \
             -p "127.0.0.1::27017" \
-            mongo:8
+            mongo:7.0
 
           echo "CI_MONGO_NAME=$MONGO_NAME" >> "$GITHUB_ENV"
 
@@ -1667,27 +1667,6 @@ jobs:
           exit "$playwright_fail"
 
       # ============================================================
-      # UPLOAD PLAYWRIGHT REPORT
-      # ============================================================
-
-      - name: Upload Playwright report
-        if: |
-          always() &&
-          (
-            steps.mode.outputs.mode == 'playwright' ||
-            steps.mode.outputs.mode == 'both'
-          )
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: playwright-report
-          path: |
-            ${{ inputs.working_directory }}/playwright-report/
-            ${{ inputs.working_directory }}/test-results/
-          if-no-files-found: ignore
-          retention-days: 7
-
-      # ============================================================
       # CLEAN UP MONGODB
       # ============================================================
 
@@ -1775,7 +1754,8 @@ jobs:
               }
               /Test Files/ { next }
               # Vitest: "Tests  12 passed | 1 failed" (word Tests, not path tests/)
-              /^[[:space:]]*Tests[[:space:]]/ && /passed/ {
+              # Jest:    "Tests:       93 passed, 93 total" (colon after Tests)
+              /^[[:space:]]*Tests:?[[:space:]]/ && /passed/ {
                 seen = 1
                 failed += num("failed")
                 passed += num("passed")
@@ -1818,12 +1798,38 @@ jobs:
                 skipped += num_key("skipped")
                 next
               }
+              # automation-testing prompt:test footer: "Passed: 12" / "Failed: 3"
+              /^Passed:[[:space:]]+[0-9]+/ {
+                seen = 1
+                passed += $2 + 0
+                next
+              }
+              /^Failed:[[:space:]]+[0-9]+/ {
+                seen = 1
+                failed += $2 + 0
+                next
+              }
+              # prompt:test per-case lines (also covers timeout/cancel before footer):
+              # "[23/728] Passed TC-CHAT-02 (...)" / "[23/728] Failed TC-CHAT-02 (...)"
+              /\[[0-9]+\/[0-9]+\][[:space:]]+Passed[[:space:]]/ {
+                prompt_pass++
+                next
+              }
+              /\[[0-9]+\/[0-9]+\][[:space:]]+Failed[[:space:]]/ {
+                prompt_fail++
+                next
+              }
               # Fallback when Node omits the footer: count timed result lines.
               /\([0-9.]+ms\)/ {
                 if (index($0, "✔") > 0 || index($0, "✓") > 0) check_pass++
                 if (index($0, "✖") > 0 || index($0, "✗") > 0) check_fail++
               }
               END {
+                if (!seen && (prompt_pass + prompt_fail) > 0) {
+                  seen = 1
+                  passed = prompt_pass
+                  failed = prompt_fail
+                }
                 if (!seen && (check_pass + check_fail) > 0) {
                   seen = 1
                   passed = check_pass
