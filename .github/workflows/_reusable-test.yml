@@ -1784,22 +1784,35 @@ jobs:
               # Pytest: "===== 4 failed, 10 passed =====" or "= 4 failed, 10 passed ="
               /^=+/ && /(failed|passed)/ {
                 seen = 1
-                failed += num("failed")
+                failed += num("failed") + num("errors")
                 passed += num("passed")
                 skipped += num("skipped")
                 next
               }
-              # customerops helpers: "31 passed, 0 failed"
-              /^[[:space:]]*[0-9]+ passed,/ {
+              # Cargo (per crate, often many lines): "test result: ok. 612 passed; 0 failed; …"
+              # Semicolons — sum across crates. num() still finds "N passed" / "N failed".
+              /test result:.*[0-9]+ passed/ {
                 seen = 1
-                passed += num("passed")
                 failed += num("failed")
+                passed += num("passed")
+                skipped += num("ignored")
+                next
+              }
+              # Pytest quiet / xdist footer without leading ===== :
+              # "2 failed, 286 passed, 18 warnings, 10 errors" or "31 passed, 0 failed"
+              # Parse the whole line via num(); do not take only $1 then next.
+              /^[[:space:]]*[0-9]+ (failed|passed|skipped|errors),/ {
+                seen = 1
+                failed += num("failed") + num("errors")
+                passed += num("passed")
                 skipped += num("skipped")
                 next
               }
-              /^[[:space:]]*[0-9]+ failed([[:space:],]|$)/ { seen = 1; failed += $1; next }
-              /^[[:space:]]*[0-9]+ passed([[:space:],]|$)/ { seen = 1; passed += $1; next }
-              /^[[:space:]]*[0-9]+ skipped([[:space:],]|$)/ { seen = 1; skipped += $1; next }
+              # Single-stat footers (Playwright list): "10 passed (6.6s)" / "3 failed"
+              # Require no comma after the word so "2 failed, 286 passed" is not truncated.
+              /^[[:space:]]*[0-9]+ failed([[:space:]]|$)/ { seen = 1; failed += $1; next }
+              /^[[:space:]]*[0-9]+ passed([[:space:]]|$)/ { seen = 1; passed += $1; next }
+              /^[[:space:]]*[0-9]+ skipped([[:space:]]|$)/ { seen = 1; skipped += $1; next }
               # Node test runner tap ("# pass 12") and spec ("ℹ pass 12").
               # Do not match Vitest/customerops "12 passed".
               /pass[[:blank:]]+[0-9]+/ && $0 !~ /passed/ {
