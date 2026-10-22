@@ -9,12 +9,6 @@ on:
 
     inputs:
 
-      runs_on:
-        description: "JSON array of GitHub Actions runner labels"
-        required: false
-        type: string
-        default: '["self-hosted","linux","x64","zysec-ai-ci"]'
-
       test_mode:
         description: "Tests to run: unit, playwright, or both"
         required: true
@@ -123,10 +117,10 @@ on:
         default: false
 
       timeout_minutes:
-        description: "Job timeout in minutes. Org default is 300 (5 hours)."
+        description: "Job timeout in minutes. Org default is 60 (1 hour)."
         required: false
         type: number
-        default: 300
+        default: 60
 
       playwright_prepare_command:
         description: "Optional shell run before Mongo/Next/Playwright (builds, seeds, asset prep)."
@@ -222,7 +216,7 @@ jobs:
 
     name: Quality Gates
 
-    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    runs-on: ubuntu-latest
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
