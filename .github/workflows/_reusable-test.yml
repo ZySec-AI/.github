@@ -599,6 +599,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Custom unit_command owns its own paths (may span multiple dirs).
+          if [ "${{ inputs.unit_command != '' }}" = "true" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping unit-dir check (unit_command is set)."
+            exit 0
+          fi
+
           if [ ! -d "$UNIT_DIR" ]; then
             echo "::error::Required unit test directory '$UNIT_DIR' does not exist."
             exit 1
