@@ -122,6 +122,15 @@ on:
         type: number
         default: 60
 
+      # JSON array of runner labels. Default is GitHub-hosted.
+      # Only automation-testing overrides to self-hosted (long prompt E2E).
+      # Example: '["self-hosted","linux","x64","zysec-ai-ci"]'
+      runs_on:
+        description: "JSON array of GitHub Actions runner labels. Org default is ubuntu-latest."
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
+
       playwright_prepare_command:
         description: "Optional shell run before Mongo/Next/Playwright (builds, seeds, asset prep)."
         required: false
@@ -216,7 +225,8 @@ jobs:
 
     name: Quality Gates
 
-    runs-on: ubuntu-latest
+    # Caller passes runs_on as JSON; default is ["ubuntu-latest"].
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
