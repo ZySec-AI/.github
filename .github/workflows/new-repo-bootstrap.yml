@@ -62,9 +62,8 @@ jobs:
           apply_branch_protection() {
             local REPO="$1"
 
-            # develop: PR validation + quality + secret scan must pass
-            # Status check names: reusable jobs report as "job-key / Job Name",
-            # inline jobs report as the job's `name:` field value.
+            # develop: lint-only required (basic / Basic Check); no PR reviews
+            # (still blocks force-push / deletion)
             DEVELOP_EXISTS=$(gh api "/repos/ZySec-AI/$REPO/branches/develop" --silent 2>/dev/null && echo yes || echo no)
             if [ "$DEVELOP_EXISTS" = "yes" ]; then
               gh api -X PUT "/repos/ZySec-AI/$REPO/branches/develop/protection" \
@@ -73,28 +72,22 @@ jobs:
             "required_status_checks": {
               "strict": true,
               "contexts": [
-                "validate / Validate PR metadata",
-                "gates / Quality Gate",
-                "scan / Secret Scan (gitleaks)"
+                "basic / Basic Check"
               ]
             },
             "enforce_admins": false,
-            "required_pull_request_reviews": {
-              "required_approving_review_count": 1,
-              "dismiss_stale_reviews": true,
-              "require_code_owner_reviews": false
-            },
+            "required_pull_request_reviews": null,
             "restrictions": null,
             "allow_force_pushes": false,
             "allow_deletions": false,
-            "required_conversation_resolution": true,
+            "required_conversation_resolution": false,
             "required_linear_history": false
           }
           PAYLOAD
-              echo "  ✓ develop — branch protection applied"
+              echo "  ✓ develop — branch protection applied (lint-only, no PR reviews)"
             fi
 
-            # release uses the same required checks as develop
+            # release: PR validation + quality + secret scan must pass
             RELEASE_EXISTS=$(gh api "/repos/ZySec-AI/$REPO/branches/release" --silent 2>/dev/null && echo yes || echo no)
             if [ "$RELEASE_EXISTS" = "yes" ]; then
               gh api -X PUT "/repos/ZySec-AI/$REPO/branches/release/protection" \

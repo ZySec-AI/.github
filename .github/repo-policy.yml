@@ -42,10 +42,9 @@ branch_naming:
 
 # --- Required status checks --------------------------------------------------
 required_status_checks:
+  # develop: lint-only (no quality/security, no required PR reviews)
   develop:
-    - 'validate / Validate PR metadata'
-    - 'gates / Quality Gate'            # full suite: tests, coverage, build
-    - 'scan / Secret Scan (gitleaks)'
+    - 'basic / Basic Check'
   stage:
     - 'validate / Validate PR metadata'
     - 'gates / Quality Gate'            # full suite: tests, coverage, build
@@ -58,6 +57,7 @@ required_status_checks:
 protected_branches:
   - develop
   - release
+# required_reviews applies to stage/release; develop requires lint only (no reviews)
 required_reviews: 1
 strict_status_checks: true
 

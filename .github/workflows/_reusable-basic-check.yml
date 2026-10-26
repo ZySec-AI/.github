@@ -1,8 +1,8 @@
 # =============================================================================
 # WORKFLOW: Reusable - Basic Check (develop only)
-# PURPOSE:  Single-job lint gate for develop PRs. Target: <10s total.
+# PURPOSE:  Single-job lint gate for develop PRs/pushes. Target: <10s total.
 #           Detects stack and runs lint inline — no matrix, no test, no build.
-#           Full quality gates run on stage.
+#           Full quality gates run on stage/release PRs.
 # =============================================================================
 name: basic check (reusable)
 
