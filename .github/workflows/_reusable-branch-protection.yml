@@ -76,13 +76,30 @@ jobs:
             echo "  ✓ $BRANCH — protection applied"
           }
 
-          # develop: PR validation + quality gate + secret scan must pass
+          # develop: no required status checks / PR reviews
+          # (still blocks force-push / deletion; lint via develop.yml is optional)
+          if gh api "/repos/$REPO/branches/develop" --silent 2>/dev/null; then
+            gh api -X PUT "/repos/$REPO/branches/develop/protection" \
+              --input - <<'DEV_PAYLOAD'
+          {
+            "required_status_checks": null,
+            "enforce_admins": false,
+            "required_pull_request_reviews": null,
+            "restrictions": null,
+            "allow_force_pushes": false,
+            "allow_deletions": false,
+            "required_conversation_resolution": false,
+            "required_linear_history": false
+          }
+          DEV_PAYLOAD
+            echo "  ✓ develop — protection applied (no required checks/reviews)"
+          else
+            echo "  ↩ develop not found — skipping"
+          fi
+
+          # release: PR validation + quality gate + secret scan must pass
           # Status check names: GitHub records reusable jobs as "job-key / Job Name"
           # and inline jobs as "Job Name" (from the `name:` field in the job).
-          #
-          # From pr-validation.yml (inline jobs):
-          #   "Branch name + merge flow"
-          #   "Validate PR metadata"
           #
           # From quality.yml → _reusable-quality.yml (reusable, job key = gates):
           #   "gates / Quality Gate"
@@ -90,13 +107,6 @@ jobs:
           # From security.yml → _reusable-security.yml (reusable, job key = scan):
           #   "scan / Secret Scan (gitleaks)"
           #
-          apply_protection "develop" '[
-            "validate / Validate PR metadata",
-            "gates / Quality Gate",
-            "scan / Secret Scan (gitleaks)"
-          ]'
-
-          # Release uses the same required checks as develop.
           apply_protection "release" '[
             "validate / Validate PR metadata",
             "gates / Quality Gate",

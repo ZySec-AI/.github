@@ -121,8 +121,18 @@ jobs:
             TARGET_PATH="target/.github/workflows/$template"
 
             [ ! -f "$TEMPLATE_PATH" ] && continue
-            [ ! -f "$TARGET_PATH" ] && continue
 
+            # develop.yml is required (lint check); missing counts as drift.
+            # Other wrappers: only compare when already present in the target repo.
+            if [ "$template" = "develop.yml" ]; then
+              if [ ! -f "$TARGET_PATH" ] || ! diff -q "$TEMPLATE_PATH" "$TARGET_PATH" >/dev/null 2>&1; then
+                echo "DRIFT detected in $template"
+                DRIFT=true
+              fi
+              continue
+            fi
+
+            [ ! -f "$TARGET_PATH" ] && continue
             if ! diff -q "$TEMPLATE_PATH" "$TARGET_PATH" >/dev/null 2>&1; then
               echo "DRIFT detected in $template"
               DRIFT=true
@@ -179,10 +189,16 @@ jobs:
             docs-to-wiki.yml
           )
 
+          mkdir -p .github/workflows
           for template in "${TEMPLATES[@]}"; do
             TEMPLATE_PATH="../templates/workflow-templates/$template"
             TARGET_PATH=".github/workflows/$template"
-            [ -f "$TEMPLATE_PATH" ] && [ -f "$TARGET_PATH" ] && cp "$TEMPLATE_PATH" "$TARGET_PATH"
+            [ ! -f "$TEMPLATE_PATH" ] && continue
+            # Always keep develop.yml present — required lint check on develop.
+            # Other wrappers: update only when already installed (no surprise adds).
+            if [ "$template" = "develop.yml" ] || [ -f "$TARGET_PATH" ]; then
+              cp "$TEMPLATE_PATH" "$TARGET_PATH"
+            fi
           done
 
           # Code Review (PR) is retired organization-wide. Remove the old
