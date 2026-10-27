@@ -52,6 +52,8 @@ jobs:
           gh pr merge "${{ github.event.pull_request.number }}" --squash --auto || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No checkout in this job, so gh cannot infer the repository from .git ("not a git repository").
+          GH_REPO: ${{ github.repository }}
 
       # A major update is simply not auto-merged — that *is* the manual review.
       - name: Explain why a major update was not merged
@@ -61,3 +63,5 @@ jobs:
             "Major version update (\`${{ steps.meta.outputs.dependency-names }}\`) — not auto-merged. Review the changelog for breaking changes before merging."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No checkout in this job, so gh cannot infer the repository from .git ("not a git repository").
+          GH_REPO: ${{ github.repository }}
