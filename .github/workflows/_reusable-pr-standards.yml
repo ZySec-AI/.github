@@ -20,7 +20,10 @@ permissions:
 jobs:
   validate:
     name: Validate PR metadata
-    runs-on: ubuntu-latest
+    # Dependabot runs carry the Dependabot secret store, where CI_PROXY_URL is
+    # unset — a hosted runner then reaches GitHub direct and the org IP allow
+    # list rejects it (403). Those runs go to the self-hosted pool instead.
+    runs-on: ${{ github.actor == 'dependabot[bot]' && fromJSON('["self-hosted","linux","x64","zysec-ai-ci"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}

@@ -29,7 +29,9 @@ jobs:
   auto-merge:
     name: Auto-merge Dependabot PRs
     if: github.actor == 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    # Always a Dependabot run, so CI_PROXY_URL is never in scope (Dependabot secret
+    # store) and a hosted runner is rejected by the org IP allow list.
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
