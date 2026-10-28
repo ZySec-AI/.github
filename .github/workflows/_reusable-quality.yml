@@ -23,6 +23,10 @@ on:
       python_version:
         type: string
         default: '3.12'
+      python_timeout_minutes:
+        description: 'Job timeout for the Python quality job. Matches the Node and Rust jobs by default.'
+        type: number
+        default: 30
       node_version:
         type: string
         default: '20'
@@ -84,7 +88,7 @@ jobs:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
       no_proxy: localhost,127.0.0.1,.blob.core.windows.net
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.python_timeout_minutes }}
     steps:
       - uses: actions/checkout@v4
 
