@@ -79,10 +79,7 @@ jobs:
 
   qa-gate:
     name: QA Sign-off Gate
-    runs-on: ubuntu-latest
-    env:
-      no_proxy: localhost,127.0.0.1,.blob.core.windows.net
-      # No http_proxy/https_proxy — GitHub-hosted runners talk to api.github.com directly
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 5
     needs: guard
     if: github.event_name == 'pull_request'
