@@ -1,3 +1,7 @@
+# Not synced org-wide (stale disabled). Canonical parked caller:
+#   .github/workflows-disabled/stale.yml
+# Also kept here as the sync template for re-enable.
+# Reusable: .github/workflows/_reusable-stale.yml
 name: Stale PR & Issue Notifier
 
 on:

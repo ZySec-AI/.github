@@ -53,7 +53,6 @@ jobs:
             ["pr-standards.yml"]="PR description + type label validation"
             ["merge-comment.yml"]="PR checklist comment on develop PRs"
             ["dependabot-auto-merge.yml"]="auto-approve + merge Dependabot patch/minor"
-            ["stale.yml"]="stale PR/issue notifier"
             ["code-freeze.yml"]="weekly code freeze reminders"
             ["sprint-retro.yml"]="weekly sprint retro issue"
             ["docs-to-wiki.yml"]="sync docs/ to GitHub Wiki"

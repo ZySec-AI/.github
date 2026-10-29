@@ -109,7 +109,6 @@ jobs:
             issue-auto-fix.yml
             branch-flow-check.yml
             pr-standards.yml
-            stale.yml
             merge-comment.yml
             code-freeze.yml
             sprint-retro.yml
@@ -149,6 +148,13 @@ jobs:
             DRIFT=true
           fi
 
+          # Stale PR & Issue Notifier is disabled org-wide. Existing
+          # repositories need an explicit deletion during this sync.
+          if [ -f "target/.github/workflows/stale.yml" ]; then
+            echo "DRIFT detected in retired stale.yml"
+            DRIFT=true
+          fi
+
           echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
 
       - name: Apply workflow sync
@@ -172,7 +178,6 @@ jobs:
             issue-auto-fix.yml
             branch-flow-check.yml
             pr-standards.yml
-            stale.yml
             merge-comment.yml
             code-freeze.yml
             sprint-retro.yml
@@ -188,6 +193,10 @@ jobs:
           # Code Review (PR) is retired organization-wide. Remove the old
           # caller from repositories that still have it during sync.
           rm -f .github/workflows/code-review-pr.yml
+
+          # Stale notifier is disabled org-wide. Remove active callers;
+          # reusable + workflow-templates/stale.yml remain for re-enable.
+          rm -f .github/workflows/stale.yml
 
           # The security workflow migration remains limited to explicit direct
           # syncs; retired Code Review (PR) is removed in every sync mode.

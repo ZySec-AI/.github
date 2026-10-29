@@ -1,0 +1,25 @@
+# Parked here so GitHub Actions does not load it (only .github/workflows/ runs).
+# Org-wide stale notifier is disabled. Reuse / re-enable:
+#   1. Copy this file to .github/workflows/stale.yml
+#   2. Add 'stale' back under wrapper_workflows.required in repo-policy.yml
+#   3. Put stale.yml back in workflow-sync / new-repo-bootstrap / sync-org-self-workflows
+#   4. Fix caller permissions (contents: write if branch sweeper stays)
+#   5. Run Workflow Sync
+# Logic: .github/workflows/_reusable-stale.yml
+# Template copy: workflow-templates/stale.yml
+
+name: Stale PR & Issue Notifier
+
+on:
+  schedule:
+    - cron: '0 4 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  stale:
+    uses: ZySec-AI/.github/.github/workflows/_reusable-stale.yml@develop
+    secrets: inherit
