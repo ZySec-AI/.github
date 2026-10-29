@@ -149,7 +149,7 @@ unique_workflow_allowlist:
 # Not a required wrapper. Re-enable: add 'stale' back under wrapper_workflows.required,
 # restore stale.yml in workflow-sync / new-repo-bootstrap / sync-org-self-workflows,
 # fix caller permissions (contents: write if branch sweeper stays), then run workflow-sync.
-# Archive for re-enable: workflow-templates/stale.yml + _reusable-stale.yml (no active caller).
+# Archive for re-enable: .github/workflows-disabled/stale.yml, workflow-templates/stale.yml, _reusable-stale.yml.
 stale:
   issue_pr:
     stale_days: 7

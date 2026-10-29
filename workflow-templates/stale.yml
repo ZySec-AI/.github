@@ -1,8 +1,6 @@
-# Not synced org-wide (stale disabled). Kept as the re-enable template.
-# Re-enable: add 'stale' to repo-policy wrapper_workflows.required;
-# restore stale.yml in workflow-sync / new-repo-bootstrap /
-# sync-org-self-workflows; copy this file to .github/workflows/stale.yml;
-# fix permissions (contents: write if branch sweeper stays); run workflow-sync.
+# Not synced org-wide (stale disabled). Canonical parked caller:
+#   .github/workflows-disabled/stale.yml
+# Also kept here as the sync template for re-enable.
 # Reusable: .github/workflows/_reusable-stale.yml
 name: Stale PR & Issue Notifier
 
