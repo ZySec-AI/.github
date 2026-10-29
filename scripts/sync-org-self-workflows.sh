@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STANDARD=(
   quality.yml security.yml release.yml hotfix-security.yml
   code-review.yml code-review-pr.yml issue-triage.yml issue-auto-fix.yml
-  docs-to-wiki.yml branch-flow-check.yml pr-standards.yml stale.yml
+  docs-to-wiki.yml branch-flow-check.yml pr-standards.yml
   merge-comment.yml code-freeze.yml sprint-retro.yml check-license.yml
 )
 
