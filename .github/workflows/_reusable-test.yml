@@ -110,6 +110,21 @@ on:
         type: boolean
         default: true
 
+      # Rust workspaces (e.g. core-sdk): toolchain + cargo cache + nextest
+      # before unit_command. Set node_required: false when there is no
+      # package.json. Callers still pass unit_command (e.g. cargo nextest).
+      rust:
+        description: "Install Rust stable, Swatinem/rust-cache, and cargo-nextest before unit_command"
+        required: false
+        type: boolean
+        default: false
+
+      rust_cache_key:
+        description: "Swatinem/rust-cache shared-key when rust is true"
+        required: false
+        type: string
+        default: "reusable-test-rust"
+
       configure_private_deps:
         description: "Before install, run the caller .github/actions/configure-private-deps action and scripts/ci-pnpm-install.sh. Other repos leave this false."
         required: false
@@ -497,6 +512,11 @@ jobs:
 
           elif is_python_dir "$APP" || is_python_dir "$UNIT_DIR"; then
 
+            PM="none"
+
+          elif [ -f "$APP/Cargo.toml" ] && [ "${{ inputs.rust }}" = "true" ]; then
+
+            # Rust workspace (core-sdk): no Node/Python project required.
             PM="none"
 
           elif [ "${{ inputs.node_required }}" = "true" ]; then
@@ -1009,6 +1029,43 @@ jobs:
               uv sync --frozen --extra dev
             fi
           fi
+
+      # ============================================================
+      # SETUP RUST (optional — core-sdk and other Cargo workspaces)
+      # ============================================================
+
+      - name: Set up Rust toolchain
+        if: |
+          inputs.rust &&
+          (
+            steps.mode.outputs.mode == 'unit' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        if: |
+          inputs.rust &&
+          (
+            steps.mode.outputs.mode == 'unit' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ inputs.rust_cache_key }}
+          workspaces: ${{ inputs.working_directory }}
+
+      - name: Install cargo-nextest
+        if: |
+          inputs.rust &&
+          (
+            steps.mode.outputs.mode == 'unit' ||
+            steps.mode.outputs.mode == 'both'
+          )
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+          fallback: cargo-install
 
       # ============================================================
       # RUN CUSTOM UNIT TESTS
@@ -1796,6 +1853,14 @@ jobs:
                 failed += num("failed")
                 passed += num("passed")
                 skipped += num("ignored")
+                next
+              }
+              # cargo-nextest: "Summary [ 312.183s ] 3638 tests run: 3638 passed, 1 skipped"
+              /Summary .*tests run:/ {
+                seen = 1
+                failed += num("failed")
+                passed += num("passed")
+                skipped += num("skipped")
                 next
               }
               # Pytest quiet / xdist footer without leading ===== :
