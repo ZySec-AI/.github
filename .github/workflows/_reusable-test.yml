@@ -256,7 +256,7 @@ jobs:
       # ============================================================
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -546,7 +546,7 @@ jobs:
             steps.mode.outputs.mode == 'playwright' ||
             steps.mode.outputs.mode == 'both'
           )
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -602,7 +602,7 @@ jobs:
 
       - name: Setup root pnpm
         if: steps.package-manager.outputs.pm == 'pnpm'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ steps.pnpm-version.outputs.version }}
 
@@ -774,7 +774,7 @@ jobs:
           steps.unit-package-manager.outputs.type == 'node' &&
           steps.unit-package-manager.outputs.pm == 'pnpm' &&
           steps.unit-package-manager.outputs.location == 'nested'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ steps.unit-pnpm-version.outputs.version }}
 
@@ -798,7 +798,7 @@ jobs:
 
       - name: Setup Python
         if: steps.unit-package-manager.outputs.type == 'python'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ inputs.python_version }}
 
@@ -1005,7 +1005,7 @@ jobs:
 
       - name: Setup uv
         if: steps.uv-project.outputs.present == 'true'
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           version: '0.13.0'
           python-version: ${{ inputs.python_version }}
