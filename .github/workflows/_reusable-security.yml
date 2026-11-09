@@ -112,7 +112,10 @@ jobs:
       - name: Install gitleaks
         run: |
           set -euo pipefail
+          # GitHub's release CDN returns intermittent 5xx; retry instead of failing the gate.
           curl -sSLf \
+            --retry 5 --retry-all-errors --retry-delay 10 \
+            --connect-timeout 20 --max-time 120 \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             -o /tmp/gitleaks.tgz
           tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
@@ -166,7 +169,41 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      # Trivy is set to report, not fail, on findings (format sarif, exit-code 0), so a failed
+      # step means the binary or vulnerability-DB download broke (GitHub release CDN 5xx).
+      # trivy-action has no retry input, so retry the step itself, up to three attempts.
       - name: Run Trivy (filesystem)
+        id: trivy-1
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-fs.sarif
+      - name: Wait before retrying Trivy
+        if: steps.trivy-1.outcome == 'failure'
+        run: sleep 30
+      - name: Run Trivy (filesystem) — retry 1
+        id: trivy-2
+        if: steps.trivy-1.outcome == 'failure'
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-fs.sarif
+      - name: Wait before retrying Trivy
+        if: steps.trivy-2.outcome == 'failure'
+        run: sleep 30
+      - name: Run Trivy (filesystem) — retry 2
+        id: trivy-3
+        if: steps.trivy-1.outcome == 'failure' && steps.trivy-2.outcome == 'failure'
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
           scan-type: fs
@@ -209,7 +246,39 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      # Trivy is set to report, not fail, on findings (format sarif, exit-code 0), so a failed
+      # step means the binary or vulnerability-DB download broke (GitHub release CDN 5xx).
+      # trivy-action has no retry input, so retry the step itself, up to three attempts.
       - name: Run Trivy (image)
+        id: trivy-1
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
+        with:
+          image-ref: ${{ inputs.image_ref }}
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-image.sarif
+      - name: Wait before retrying Trivy
+        if: steps.trivy-1.outcome == 'failure'
+        run: sleep 30
+      - name: Run Trivy (image) — retry 1
+        id: trivy-2
+        if: steps.trivy-1.outcome == 'failure'
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
+        with:
+          image-ref: ${{ inputs.image_ref }}
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-image.sarif
+      - name: Wait before retrying Trivy
+        if: steps.trivy-2.outcome == 'failure'
+        run: sleep 30
+      - name: Run Trivy (image) — retry 2
+        id: trivy-3
+        if: steps.trivy-1.outcome == 'failure' && steps.trivy-2.outcome == 'failure'
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
           image-ref: ${{ inputs.image_ref }}
