@@ -44,7 +44,7 @@ jobs:
   detect:
     name: Detect language stacks
     if: inputs.auto_detect
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
@@ -83,7 +83,7 @@ jobs:
         (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.python == '1') ||
         (!inputs.auto_detect && inputs.python)
       )
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
@@ -182,7 +182,7 @@ jobs:
         (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.node == '1') ||
         (!inputs.auto_detect && inputs.node)
       )
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     timeout-minutes: 30
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
@@ -416,7 +416,7 @@ jobs:
         (inputs.auto_detect && needs.detect.result == 'success' && needs.detect.outputs.rust == '1') ||
         (!inputs.auto_detect && inputs.rust)
       )
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
@@ -488,7 +488,7 @@ jobs:
 
   quality-gate:
     name: Quality Gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, zysec-ai-ci]
     env:
       https_proxy: ${{ secrets.CI_PROXY_URL }}
       http_proxy: ${{ secrets.CI_PROXY_URL }}
